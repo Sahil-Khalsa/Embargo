@@ -1,0 +1,27 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pytest*)",
+      "Bash(python -m pytest*)",
+      "Bash(pip install*)",
+      "Bash(pip show*)",
+      "Bash(embargo *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Read",
+      "Glob",
+      "Grep"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Runtime artifacts — not the eval corpus, which lives under corpus/ and is committed
+*.db
+*.sqlite3
+traces/
+
+.claude/settings.local.json
