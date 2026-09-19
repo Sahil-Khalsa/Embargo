@@ -56,6 +56,19 @@ def test_fake_resolver_returns_empty_list_for_unknown_message_id():
     assert resolver.resolve(_message(message_id="unknown"), [_fact()]) == []
 
 
+def test_fake_resolver_rejects_resolution_for_fact_not_among_candidates():
+    fixtures = {
+        "M001": [
+            {"fact_id": "F999", "mode": "conveys", "confidence": 0.9, "span": "the thing from the other day"}
+        ]
+    }
+    resolver = FakeResolver(fixtures)
+
+    # F999 isn't in the candidates list passed to resolve() -- simulates a
+    # fixture/model referencing a fact the resolver was never shown.
+    assert resolver.resolve(_message(), [_fact(fact_id="F047")]) == []
+
+
 def test_fake_resolver_rejects_resolution_whose_span_is_not_verbatim_in_body():
     fixtures = {
         "M001": [

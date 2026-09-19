@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from embargo.cli import screen_message
+from embargo.pipeline import screen_message
 from embargo.models import Crossing, Fact, FactState, MaterialityLevel, Message, Verdict
 from embargo.resolver import FakeResolver, ResolverOutputInvalid
 
@@ -79,6 +79,15 @@ def test_screen_message_resolver_failure_produces_review_trace():
 
     assert verdict == Verdict.REVIEW
     assert record["reason"] == "resolver_output_invalid"
+
+
+def test_screen_message_records_ledger_version_and_supersedes():
+    record, verdict = screen_message(
+        _message(), [FACT], [], _resolver(), ledger_version=5, supersedes="abc123"
+    )
+
+    assert record["ledger_version"] == 5
+    assert record["supersedes"] == "abc123"
 
 
 def test_screen_message_no_candidates_is_clean():

@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 
+from embargo.ledger import bump_version, ensure_version_table, read_version
 from embargo.models import Crossing
 
 _SCHEMA = """
@@ -28,6 +29,10 @@ class Access:
         self._conn = sqlite3.connect(path)
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+        ensure_version_table(self._conn)
+
+    def current_version(self) -> int:
+        return read_version(self._conn)
 
     def add_crossing(self, crossing: Crossing) -> None:
         with self._conn:
@@ -43,6 +48,7 @@ class Access:
                     crossing.effective_until.isoformat() if crossing.effective_until else None,
                 ),
             )
+            bump_version(self._conn)
 
     def list_crossings(self) -> list[Crossing]:
         rows = self._conn.execute(

@@ -19,18 +19,27 @@ class Resolver(Protocol):
     def resolve(self, message: Message, candidates: list[Fact]) -> list[Resolution]: ...
 
 
-def _reject_non_verbatim_spans(message: Message, resolutions: list[Resolution]) -> list[Resolution]:
+def _validate_resolutions(
+    message: Message, candidates: list[Fact], resolutions: list[Resolution]
+) -> list[Resolution]:
+    candidate_ids = {fact.fact_id for fact in candidates}
     kept = []
     for resolution in resolutions:
-        if resolution.span in message.body:
-            kept.append(resolution)
-        else:
+        if resolution.fact_id not in candidate_ids:
+            logger.warning(
+                "rejecting resolution for fact_id=%s: not among the candidates given for message %s",
+                resolution.fact_id,
+                message.message_id,
+            )
+        elif resolution.span not in message.body:
             logger.warning(
                 "rejecting resolution for fact_id=%s: span %r not verbatim in message %s body",
                 resolution.fact_id,
                 resolution.span,
                 message.message_id,
             )
+        else:
+            kept.append(resolution)
     return kept
 
 
@@ -58,7 +67,7 @@ class FakeResolver:
     def resolve(self, message: Message, candidates: list[Fact]) -> list[Resolution]:
         raw = self._fixtures.get(message.message_id, [])
         resolutions = _resolutions_from_json(raw)
-        return _reject_non_verbatim_spans(message, resolutions)
+        return _validate_resolutions(message, candidates, resolutions)
 
 
 class ModelResolver:
@@ -78,7 +87,7 @@ class ModelResolver:
         else:
             raise ResolverOutputInvalid(message.message_id)
 
-        return _reject_non_verbatim_spans(message, resolutions)
+        return _validate_resolutions(message, candidates, resolutions)
 
     def _build_prompt(self, message: Message, candidates: list[Fact]) -> str:
         candidate_lines = "\n".join(

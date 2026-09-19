@@ -89,6 +89,8 @@ def test_screen_produces_verdict_and_trace_record(tmp_path, capsys):
     record = json.loads(trace_path.read_text().strip())
     assert record["message_id"] == "M001"
     assert record["verdict"] == "clean"
+    # 4 prior writes: fact add, transition, two crossing adds.
+    assert record["ledger_version"] == 4
 
 
 def test_screen_same_message_three_ways_yields_three_different_verdicts(tmp_path, capsys):

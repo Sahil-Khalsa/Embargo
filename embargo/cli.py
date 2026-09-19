@@ -7,18 +7,17 @@ from pathlib import Path
 import yaml
 
 from embargo.access import Access
-from embargo.decision import decide
 from embargo.ledger import Ledger
-from embargo.models import Crossing, Fact, FactState, MaterialityLevel, Message, Verdict
-from embargo.prefilter import candidate_facts
-from embargo.resolver import FakeResolver, Resolver, ResolverOutputInvalid
-from embargo.trace import build_resolver_failure_trace, build_trace, read_traces, write_trace
+from embargo.models import Crossing, Fact, FactState, MaterialityLevel, Message
+from embargo.pipeline import DEFAULT_THRESHOLD, screen_message
+from embargo.rescreen import rescreen_stale_traces
+from embargo.resolver import FakeResolver
+from embargo.trace import read_traces, write_trace
 
 DEFAULT_DB = "embargo.db"
 DEFAULT_MESSAGES = "corpus/messages.yaml"
 DEFAULT_FIXTURES = "eval/fixtures/resolutions.json"
 DEFAULT_TRACE_FILE = "traces/trace.jsonl"
-DEFAULT_THRESHOLD = 0.6
 
 
 def _parse_dt(s: str) -> datetime:
@@ -27,46 +26,6 @@ def _parse_dt(s: str) -> datetime:
 
 def _split_csv(s: str) -> list[str]:
     return [item for item in (part.strip() for part in s.split(",")) if item]
-
-
-# --- core pipeline (testable without any file I/O) --------------------------
-
-
-def screen_message(
-    message: Message,
-    facts: list[Fact],
-    crossings: list[Crossing],
-    resolver: Resolver,
-    *,
-    threshold: float = DEFAULT_THRESHOLD,
-    as_of_override: datetime | None = None,
-    recipients_override: list[str] | None = None,
-) -> tuple[dict, Verdict]:
-    candidates = candidate_facts(message, facts, crossings)
-    candidate_facts_only = [c.fact for c in candidates]
-
-    try:
-        resolutions = resolver.resolve(message, candidate_facts_only)
-    except ResolverOutputInvalid:
-        record = build_resolver_failure_trace(
-            message,
-            candidates,
-            as_of_override=as_of_override,
-            recipients_override=recipients_override,
-        )
-        return record, Verdict.REVIEW
-
-    facts_by_id = {fact.fact_id: fact for fact in candidate_facts_only}
-    decision = decide(message, resolutions, facts_by_id, crossings, threshold=threshold)
-    record = build_trace(
-        message,
-        candidates,
-        resolutions,
-        decision,
-        as_of_override=as_of_override,
-        recipients_override=recipients_override,
-    )
-    return record, decision.verdict
 
 
 # --- YAML loading -------------------------------------------------------------
@@ -92,7 +51,9 @@ def message_from_dict(item: dict) -> Message:
 
 def cmd_ledger_add(args: argparse.Namespace) -> None:
     ledger = Ledger(args.db)
+    access = Access(args.db)
     recorded_at = _parse_dt(args.recorded_at)
+    valid_from = _parse_dt(args.valid_from) if args.valid_from else recorded_at
     fact = Fact(
         fact_id=args.id,
         summary=args.summary,
@@ -100,10 +61,34 @@ def cmd_ledger_add(args: argparse.Namespace) -> None:
         aliases=_split_csv(args.aliases),
         state=FactState.PRIVATE,
         recorded_at=recorded_at,
-        materiality=[(recorded_at, MaterialityLevel(args.materiality))],
+        # Materiality is anchored at valid_from, not recorded_at: for a
+        # backdated fact, the level applied when the fact became true, not
+        # merely when the ledger learned about it -- otherwise messages sent
+        # between valid_from and recorded_at have no materiality to look up.
+        materiality=[(valid_from, MaterialityLevel(args.materiality))],
+        valid_from=valid_from,
     )
     ledger.add_fact(fact)
-    print(f"added fact {fact.fact_id}")
+    version_at_entry = ledger.current_version()
+    print(f"added fact {fact.fact_id} (ledger version {version_at_entry})")
+
+    # Auto-rescreen (spec §13.1): any current trace older than this entry,
+    # for a message sent at or after this fact's valid_from, may now resolve
+    # differently. No-op (nothing read) if trace_file has no history yet.
+    resolver = FakeResolver.from_file(args.fixtures)
+    changes = rescreen_stale_traces(
+        args.trace_file,
+        ledger.list_facts(),
+        access.list_crossings(),
+        resolver,
+        max_version=version_at_entry,
+        current_version=version_at_entry,
+        timestamp_from=fact.valid_from,
+    )
+    if changes:
+        print(f"re-screened {len(changes)} message(s) with changed verdicts:")
+        for change in changes:
+            print(f"  {change.message_id}: {change.old_verdict} -> {change.new_verdict}")
 
 
 def cmd_ledger_list(args: argparse.Namespace) -> None:
@@ -193,11 +178,37 @@ def cmd_screen(args: argparse.Namespace) -> None:
         threshold=args.threshold,
         as_of_override=as_of,
         recipients_override=recipients_override,
+        ledger_version=ledger.current_version(),
     )
 
     Path(args.trace_file).parent.mkdir(parents=True, exist_ok=True)
     write_trace(args.trace_file, record)
     print(verdict.value)
+
+
+# --- rescreen command ------------------------------------------------------------
+
+
+def cmd_rescreen(args: argparse.Namespace) -> None:
+    ledger = Ledger(args.db)
+    access = Access(args.db)
+    resolver = FakeResolver.from_file(args.fixtures)
+
+    changes = rescreen_stale_traces(
+        args.trace_file,
+        ledger.list_facts(),
+        access.list_crossings(),
+        resolver,
+        max_version=args.since,
+        current_version=ledger.current_version(),
+        threshold=args.threshold,
+    )
+    if not changes:
+        print("no verdicts changed")
+        return
+    print(f"{len(changes)} verdict(s) changed:")
+    for change in changes:
+        print(f"  {change.message_id}: {change.old_verdict} -> {change.new_verdict}")
 
 
 # --- trace command --------------------------------------------------------------
@@ -243,8 +254,11 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--entities", default="")
     add_parser.add_argument("--aliases", default="")
     add_parser.add_argument("--recorded-at", required=True)
+    add_parser.add_argument("--valid-from")
     add_parser.add_argument("--materiality", default="none")
     add_parser.add_argument("--db", default=DEFAULT_DB)
+    add_parser.add_argument("--trace-file", default=DEFAULT_TRACE_FILE)
+    add_parser.add_argument("--fixtures", default=DEFAULT_FIXTURES)
     add_parser.set_defaults(func=cmd_ledger_add)
 
     list_parser = ledger_sub.add_parser("list")
@@ -298,6 +312,14 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--fixtures", default=DEFAULT_FIXTURES)
     eval_parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     eval_parser.set_defaults(func=cmd_eval)
+
+    rescreen_parser = subparsers.add_parser("rescreen")
+    rescreen_parser.add_argument("--since", type=int, required=True)
+    rescreen_parser.add_argument("--db", default=DEFAULT_DB)
+    rescreen_parser.add_argument("--trace-file", default=DEFAULT_TRACE_FILE)
+    rescreen_parser.add_argument("--fixtures", default=DEFAULT_FIXTURES)
+    rescreen_parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    rescreen_parser.set_defaults(func=cmd_rescreen)
 
     trace_parser = subparsers.add_parser("trace")
     trace_sub = trace_parser.add_subparsers(dest="trace_command", required=True)

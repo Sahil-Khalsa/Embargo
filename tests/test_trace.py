@@ -80,6 +80,42 @@ def test_build_trace_records_overrides_when_given():
     assert record["recipients_override"] == ["carol"]
 
 
+def test_build_trace_assigns_a_trace_id():
+    record = _built_trace()
+
+    assert record["trace_id"]
+    assert isinstance(record["trace_id"], str)
+
+
+def test_build_trace_is_deterministic_for_identical_input():
+    record_a = _built_trace()
+    record_b = _built_trace()
+
+    assert record_a["trace_id"] == record_b["trace_id"]
+
+
+def test_build_trace_id_changes_when_content_differs():
+    record_a = _built_trace()
+    record_b = _built_trace(as_of_override=datetime(2026, 7, 1))
+
+    assert record_a["trace_id"] != record_b["trace_id"]
+
+
+def test_build_trace_supersedes_defaults_to_none():
+    record = _built_trace()
+
+    assert record["supersedes"] is None
+
+
+def test_build_trace_records_supersedes_when_given():
+    original = _built_trace()
+
+    superseding = _built_trace(supersedes=original["trace_id"])
+
+    assert superseding["supersedes"] == original["trace_id"]
+    assert superseding["trace_id"] != original["trace_id"]
+
+
 def test_build_resolver_failure_trace_is_review_with_reason():
     candidates = candidate_facts(MESSAGE, [FACT], [])
     record = build_resolver_failure_trace(MESSAGE, candidates)

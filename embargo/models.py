@@ -71,6 +71,13 @@ class Fact:
     materiality: list[tuple[datetime, MaterialityLevel]]
     announced_at: datetime | None = None
     cleared_at: datetime | None = None
+    # When the fact became true in the world, distinct from recorded_at (when
+    # the ledger learned it). Defaults to recorded_at when not given.
+    valid_from: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if self.valid_from is None:
+            self.valid_from = self.recorded_at
 
 
 @dataclass

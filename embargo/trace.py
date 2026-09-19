@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,16 @@ def _checks_to_dict(checks: FactChecks) -> dict:
         "sender_authorized": checks.sender_authorized,
         "recipient_authorized": checks.recipient_authorized,
     }
+
+
+def _finalize(record: dict) -> dict:
+    # trace_id is a content hash, not a random id: two screenings with
+    # identical content get the same id (relevant to V2's byte-identical-
+    # traces requirement), and it doubles as the identity §13.4's hash chain
+    # needs rather than introducing a second id concept.
+    canonical = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    record["trace_id"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return record
 
 
 def _fact_result_to_dict(resolution: Resolution, fact_decision: FactDecision) -> dict:
@@ -38,8 +49,9 @@ def build_trace(
     as_of_override: datetime | None = None,
     recipients_override: list[str] | None = None,
     ledger_version: int = 0,
+    supersedes: str | None = None,
 ) -> dict:
-    return {
+    return _finalize({
         "message_id": message.message_id,
         "sender": message.sender,
         "recipients": message.recipients,
@@ -57,7 +69,8 @@ def build_trace(
         "verdict": decision.verdict.value,
         "reason": None,
         "ledger_version": ledger_version,
-    }
+        "supersedes": supersedes,
+    })
 
 
 def build_resolver_failure_trace(
@@ -67,8 +80,9 @@ def build_resolver_failure_trace(
     as_of_override: datetime | None = None,
     recipients_override: list[str] | None = None,
     ledger_version: int = 0,
+    supersedes: str | None = None,
 ) -> dict:
-    return {
+    return _finalize({
         "message_id": message.message_id,
         "sender": message.sender,
         "recipients": message.recipients,
@@ -83,7 +97,8 @@ def build_resolver_failure_trace(
         "verdict": Verdict.REVIEW.value,
         "reason": "resolver_output_invalid",
         "ledger_version": ledger_version,
-    }
+        "supersedes": supersedes,
+    })
 
 
 def write_trace(path: str | Path, record: dict) -> None:

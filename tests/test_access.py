@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from embargo.access import Access, authorized
-from embargo.models import Crossing
+from embargo.ledger import Ledger
+from embargo.models import Crossing, Fact, FactState, MaterialityLevel
 
 
 def _crossing(party_id="alice", fact_id="F047", effective_from=datetime(2026, 1, 1), effective_until=None):
@@ -80,3 +81,30 @@ def test_access_authorized_method_matches_pure_function_via_db_round_trip():
     assert access.authorized("alice", "F047", datetime(2026, 1, 15)) is True
     assert access.authorized("alice", "F047", datetime(2026, 2, 1)) is False
     assert access.authorized("bob", "F047", datetime(2026, 1, 15)) is False
+
+
+def test_add_crossing_bumps_version(tmp_path):
+    db = str(tmp_path / "embargo.db")
+    access = Access(db)
+
+    access.add_crossing(_crossing(effective_from=datetime(2026, 1, 1)))
+
+    assert access.current_version() == 1
+
+
+def test_version_is_shared_between_ledger_and_access(tmp_path):
+    db = str(tmp_path / "embargo.db")
+    ledger = Ledger(db)
+    access = Access(db)
+
+    ledger.add_fact(
+        Fact(
+            fact_id="F047", summary="x", entities=[], aliases=[], state=FactState.PRIVATE,
+            recorded_at=datetime(2026, 1, 1),
+            materiality=[(datetime(2026, 1, 1), MaterialityLevel.HIGH)],
+        )
+    )
+    access.add_crossing(_crossing(effective_from=datetime(2026, 1, 1)))
+
+    assert ledger.current_version() == 2
+    assert access.current_version() == 2

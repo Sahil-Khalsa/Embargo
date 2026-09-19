@@ -214,6 +214,54 @@ def test_transition_rejects_disallowed_paths():
         ledger.transition("F047", FactState.CLEARED, cleared_at=datetime(2026, 2, 1))
 
 
+def test_add_fact_persists_valid_from_distinct_from_recorded_at():
+    ledger = Ledger(":memory:")
+    fact = Fact(
+        fact_id="F047",
+        summary="Acme is acquiring Beta",
+        entities=["ACME"],
+        aliases=[],
+        state=FactState.PRIVATE,
+        recorded_at=datetime(2026, 3, 1),
+        materiality=[(datetime(2026, 3, 1), MaterialityLevel.HIGH)],
+        valid_from=datetime(2026, 1, 1),
+    )
+
+    ledger.add_fact(fact)
+    retrieved = ledger.get_fact("F047")
+
+    assert retrieved.valid_from == datetime(2026, 1, 1)
+    assert retrieved.recorded_at == datetime(2026, 3, 1)
+
+
+def test_current_version_starts_at_zero():
+    ledger = Ledger(":memory:")
+
+    assert ledger.current_version() == 0
+
+
+def test_add_fact_bumps_version():
+    ledger = Ledger(":memory:")
+    ledger.add_fact(
+        Fact(
+            fact_id="F047", summary="x", entities=[], aliases=[], state=FactState.PRIVATE,
+            recorded_at=datetime(2026, 1, 1),
+            materiality=[(datetime(2026, 1, 1), MaterialityLevel.HIGH)],
+        )
+    )
+
+    assert ledger.current_version() == 1
+
+
+def test_transition_also_bumps_version():
+    ledger = _private_ledger_with_fact()
+    version_after_add = ledger.current_version()
+
+    ledger.transition("F047", FactState.ABANDONED)
+
+    assert ledger.current_version() == version_after_add + 1
+
+
 def test_transition_out_of_cleared_is_always_rejected():
     ledger = _private_ledger_with_fact()
     ledger.transition("F047", FactState.ANNOUNCED, announced_at=datetime(2026, 2, 1))

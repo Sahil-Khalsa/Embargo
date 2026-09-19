@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS facts (
     state TEXT NOT NULL,
     recorded_at TEXT NOT NULL,
     announced_at TEXT,
-    cleared_at TEXT
+    cleared_at TEXT,
+    valid_from TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS materiality (
@@ -23,6 +24,34 @@ CREATE TABLE IF NOT EXISTS materiality (
     PRIMARY KEY (fact_id, effective_from)
 );
 """
+
+# Shared with access.py: both point at the same db file (in real use) and
+# each write -- fact or crossing -- bumps this one counter (spec §13.1).
+# V1 assumes a fresh database; adding this column to an existing V0-era
+# embargo.db is a V2 migrations concern (spec §14.1), not handled here.
+_VERSION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS ledger_version (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO ledger_version (id, version) VALUES (1, 0);
+"""
+
+
+def ensure_version_table(conn: sqlite3.Connection) -> None:
+    conn.executescript(_VERSION_SCHEMA)
+    conn.commit()
+
+
+def bump_version(conn: sqlite3.Connection) -> int:
+    ensure_version_table(conn)
+    conn.execute("UPDATE ledger_version SET version = version + 1 WHERE id = 1")
+    return read_version(conn)
+
+
+def read_version(conn: sqlite3.Connection) -> int:
+    ensure_version_table(conn)
+    return conn.execute("SELECT version FROM ledger_version WHERE id = 1").fetchone()[0]
 
 
 def materiality_at(fact: Fact, at: datetime) -> MaterialityLevel:
@@ -39,6 +68,10 @@ class Ledger:
         self._conn = sqlite3.connect(path)
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+        ensure_version_table(self._conn)
+
+    def current_version(self) -> int:
+        return read_version(self._conn)
 
     def add_fact(self, fact: Fact) -> None:
         if fact.state != FactState.PRIVATE:
@@ -51,8 +84,8 @@ class Ledger:
                 """
                 INSERT INTO facts
                     (fact_id, summary, entities, aliases, state,
-                     recorded_at, announced_at, cleared_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     recorded_at, announced_at, cleared_at, valid_from)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     fact.fact_id,
@@ -63,6 +96,7 @@ class Ledger:
                     fact.recorded_at.isoformat(),
                     fact.announced_at.isoformat() if fact.announced_at else None,
                     fact.cleared_at.isoformat() if fact.cleared_at else None,
+                    fact.valid_from.isoformat(),
                 ),
             )
             self._conn.executemany(
@@ -72,6 +106,7 @@ class Ledger:
                     for effective_from, level in fact.materiality
                 ],
             )
+            bump_version(self._conn)
 
     def transition(
         self,
@@ -113,6 +148,9 @@ class Ledger:
                 f"illegal transition: {fact.state.value!r} -> {target.value!r}"
             )
 
+        with self._conn:
+            bump_version(self._conn)
+
         return self.get_fact(fact_id)
 
     def _update_state(
@@ -144,7 +182,7 @@ class Ledger:
         row = self._conn.execute(
             """
             SELECT fact_id, summary, entities, aliases, state,
-                   recorded_at, announced_at, cleared_at
+                   recorded_at, announced_at, cleared_at, valid_from
             FROM facts WHERE fact_id = ?
             """,
             (fact_id,),
@@ -157,7 +195,7 @@ class Ledger:
         rows = self._conn.execute(
             """
             SELECT fact_id, summary, entities, aliases, state,
-                   recorded_at, announced_at, cleared_at
+                   recorded_at, announced_at, cleared_at, valid_from
             FROM facts
             """
         ).fetchall()
@@ -173,6 +211,7 @@ class Ledger:
             recorded_at,
             announced_at,
             cleared_at,
+            valid_from,
         ) = row
         materiality_rows = self._conn.execute(
             "SELECT effective_from, level FROM materiality WHERE fact_id = ? ORDER BY effective_from",
@@ -191,4 +230,5 @@ class Ledger:
             ],
             announced_at=datetime.fromisoformat(announced_at) if announced_at else None,
             cleared_at=datetime.fromisoformat(cleared_at) if cleared_at else None,
+            valid_from=datetime.fromisoformat(valid_from),
         )

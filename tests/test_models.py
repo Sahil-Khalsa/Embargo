@@ -64,6 +64,35 @@ def test_fact_holds_spec_fields_with_optional_announced_and_cleared_at():
     assert fact.cleared_at is None
 
 
+def test_fact_valid_from_defaults_to_recorded_at_when_omitted():
+    fact = Fact(
+        fact_id="F047",
+        summary="Acme is acquiring Beta",
+        entities=["ACME"],
+        aliases=[],
+        state=FactState.PRIVATE,
+        recorded_at=datetime(2026, 3, 1),
+        materiality=[(datetime(2026, 3, 1), MaterialityLevel.HIGH)],
+    )
+
+    assert fact.valid_from == datetime(2026, 3, 1)
+
+
+def test_fact_valid_from_can_be_set_earlier_than_recorded_at():
+    fact = Fact(
+        fact_id="F047",
+        summary="Acme is acquiring Beta",
+        entities=["ACME"],
+        aliases=[],
+        state=FactState.PRIVATE,
+        recorded_at=datetime(2026, 3, 1),
+        materiality=[(datetime(2026, 3, 1), MaterialityLevel.HIGH)],
+        valid_from=datetime(2026, 1, 1),
+    )
+
+    assert fact.valid_from == datetime(2026, 1, 1)
+
+
 def test_crossing_defaults_to_open_ended_authorization():
     crossing = Crossing(
         party_id="alice",

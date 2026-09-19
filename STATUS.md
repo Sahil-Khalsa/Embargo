@@ -125,10 +125,71 @@ built and passing. V1 has not been started; do not pull any V1/V2 feature forwar
       `ModelResolver` is never referenced by `eval/run_eval.py` or `embargo/cli.py` — only `FakeResolver` is
       wired into the eval and screen paths in V0.
 
-**Full suite: 104 tests, all passing** (`python -m pytest -q`).
+**V0 full suite: 104 tests, all passing** (`python -m pytest -q`).
 
-## V1 — blocked on V0 (spec §13)
-Not started. Criteria: spec §13.6.
+## V1 — in progress (spec §13)
+
+### §13.1 — Re-screening when a fact is recorded late — COMPLETE
+- [x] Prerequisite bug fix (found by the advisor before this section started): `resolver.py`'s
+      `_validate_resolutions()` (renamed from `_reject_non_verbatim_spans`) now also rejects any resolution
+      whose `fact_id` isn't among the `candidates` it was given, not just a non-verbatim `span`. Without this,
+      the very re-screening scenario this section exists for — a fact not yet in the ledger, so prefilter
+      surfaces zero candidates, but `FakeResolver` ignores its `candidates` argument and returns the fixture
+      entry anyway — would crash `decide()` with `KeyError` instead of correctly resolving to `clean`.
+- [x] `embargo/models.py` — `Fact.valid_from: datetime | None = None`, defaulted to `recorded_at` in
+      `__post_init__` when omitted. This default is exactly what keeps all 104 V0 tests and the 23-fact
+      corpus green with zero edits — but note it also means `valid_from == recorded_at` unless explicitly set
+      earlier, so re-screening only ever finds anything to do for backdated facts.
+- [x] `embargo/ledger.py` — `valid_from` column persisted; shared `ledger_version` counter (a
+      `ledger_version` table, `ensure_version_table`/`bump_version`/`read_version` free functions,
+      `Ledger.current_version()`). Every `add_fact`/`transition` bumps it by 1. **V0-era `embargo.db` files
+      need to be recreated for V1** — `CREATE TABLE IF NOT EXISTS` doesn't add a column to an existing table,
+      and real migrations are explicitly V2 scope (§14.1), not handled here.
+- [x] `embargo/access.py` — `Access.add_crossing` bumps the *same* shared counter (imported from
+      `ledger.py`) so it only actually shares state when `Ledger` and `Access` point at the same file path
+      (proven with a `tmp_path`-backed test — `:memory:` databases are per-connection and would not share
+      state, which the first draft of this test got wrong).
+- [x] `embargo/trace.py` — `trace_id` is a SHA-256 content hash over the record's canonical JSON (sorted
+      keys, excluding `trace_id` itself), not a random id: two screenings with identical content get the same
+      id, which both anticipates §13.4's hash-chain identity and doesn't fight V2 §14.5's byte-identical-
+      traces criterion the way a `uuid4` would have. `supersedes: str | None` added alongside it.
+- [x] `embargo/pipeline.py` — new module. `screen_message()` was extracted out of `cli.py` into here because
+      `rescreen.py` needs it and `cli.py` needs `rescreen.py` (auto-trigger on `ledger add`); the two-way
+      dependency would otherwise be a circular import. Pure refactor, no behavior change — full suite stayed
+      green (124 passed) immediately after the move.
+- [x] `embargo/rescreen.py` — new module. `current_traces()` selects non-superseded records (a trace is
+      current iff no other record's `supersedes` equals its `trace_id`). `rescreen_stale_traces()` re-screens
+      every current trace with `ledger_version < max_version` (optionally also filtered to
+      `timestamp >= timestamp_from`, used only for the single-fact auto-trigger), reconstructing the
+      `Message` directly from the trace record's own stored effective sender/recipients/timestamp/body —
+      which is also what makes a prior `--as-of`/`--recipients` override survive a re-screen automatically,
+      with no extra plumbing. Writes a new superseding trace for **every** affected message, but only
+      *returns* (and the CLI only reports) the ones whose verdict actually changed — read literally, spec's
+      "produces superseding traces with changed verdicts where appropriate" doesn't force a choice here, so
+      this is the flagged interpretation: completeness of the audit trail over a smaller trace file.
+- [x] `embargo/cli.py` — `ledger add` gained `--valid-from` (defaults to `--recorded-at`), `--trace-file`,
+      `--fixtures`, and now auto-triggers `rescreen_stale_traces()` after every add (a no-op if the trace
+      file has no history yet). New `embargo rescreen --since <version>` command. **Flagged ambiguity,
+      resolved and not relitigated further:** "`--since <version>`" is read plainly as "re-screen every
+      current trace recorded at `ledger_version < <version>`" — a batch/catch-up operation, not tied to one
+      specific fact the way the automatic trigger is.
+      Also fixed while wiring this up: `cmd_ledger_add` was anchoring the fact's initial materiality entry at
+      `recorded_at` unconditionally; for a backdated fact (`valid_from` earlier than `recorded_at`) that left
+      a gap where `materiality_at()` had nothing to look up for messages sent in between, and re-screening
+      such a message crashed with `ValueError`. Materiality is now anchored at `valid_from`.
+
+**§13.1 acceptance criterion 1 verified directly, end-to-end, through the real CLI**
+(`tests/test_cli_rescreen.py::test_ledger_add_auto_rescreens_affected_messages`): a message mentioning a
+not-yet-ledgered fact screens `clean` (nothing to convey yet); the fact is then entered via `ledger add` with
+`--valid-from` predating the message; the add's own output reports `M100: clean -> violation_upstream_leak`;
+the trace file has two records for that message, the second `supersedes` the first. The manual
+`embargo rescreen --since` path is verified separately in the same file.
+
+**V1 full suite so far: 126 tests, all passing.**
+
+### §13.2–§13.5 — not started
+Calibration tooling, adversarial corpus, tamper-evident trace store, semantic prefilter. Build in this order
+per spec §10 (within a tier, build in the order the sections are written).
 
 ## V2 — blocked on V1 (spec §14)
 Not started. Criteria: spec §14.5.
@@ -139,13 +200,13 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
 - Digestion window: fixed policy vs. per-event
 - Number of materiality levels and who may change them post-intake
 
-## Known follow-up (not spec-mandated, noted rather than fixed to avoid V0 scope creep)
-- If a resolver ever returns a `fact_id` that wasn't among the candidates it was given (a hallucination,
-  for a real model backend), `decide()` will raise `KeyError` rather than rejecting it gracefully the way
-  `resolver.py` already rejects a non-verbatim `span`. Every hand-authored fixture in this corpus only
-  returns fact ids that are genuine candidates, so this never triggers in V0. Worth a
-  reject-and-log guard in `resolver.py` (same layer, same pattern as span validation) before `ModelResolver`
-  is ever pointed at a real model in V2.
+## Known follow-up — RESOLVED during §13.1
+- ~~If a resolver ever returns a `fact_id` that wasn't among the candidates it was given...~~ Fixed:
+  `resolver._validate_resolutions()` now rejects (and logs) any resolution whose `fact_id` isn't among the
+  candidates passed to `resolve()`, the same way it already rejected a non-verbatim `span`. This turned out
+  not to be optional — §13.1's own re-screening scenario hits exactly this path (a fact not yet in the
+  ledger has zero real candidates, but a fixture/model may still name it), so the guard became a prerequisite
+  rather than a deferred nice-to-have.
 
 ## Dependencies
 - `PyYAML` (see `requirements.txt`) — needed for `corpus/*.yaml` per spec §5's module layout; confirmed
