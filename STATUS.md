@@ -35,7 +35,16 @@ first module built; everything else in the module list is still to do.
       against each fact, which is what catches an oblique reference with no keyword hit (spec §4.1's
       "essential" case). Reasons are carried through for the trace's candidate-selection record (§4.5), not
       recomputed later. TDD'd in `tests/test_prefilter.py` (9 tests, all passing).
-- [ ] `embargo/resolver.py` — `Resolver` Protocol, `ModelResolver`, `FakeResolver`
+- [x] `embargo/resolver.py` — `Resolver` Protocol; `FakeResolver` (fixture dict or `.from_file()`, JSON keyed
+      by message id); `ModelResolver` (injected `model_call: Callable[[str], str]` — no vendor SDK wired in
+      yet, keeps this testable and unopinionated about which model backend V2 eventually plugs in). Prompt
+      sends only candidate id/summary/entities/aliases — never `state`/`announced_at`/`cleared_at`, and never
+      asks about materiality/violation. One retry on invalid JSON, then raises `ResolverOutputInvalid`
+      (caller — the pipeline, not yet built — turns that into the `review`/`resolver_output_invalid` verdict
+      per spec §4.2; the resolver itself never emits a verdict). Both resolvers reject-and-log any resolution
+      whose `span` isn't verbatim in the message body (spec §3.4). TDD'd in `tests/test_resolver.py`
+      (10 tests, all passing — including ModelResolver's own tests, which per spec §7 are the one place a
+      non-FakeResolver test is allowed, using an injected fake `model_call` rather than real network access).
 - [ ] `embargo/decision.py` — pure verdict logic, no I/O, no import of `resolver.py`
 - [ ] `embargo/trace.py` — trace record construction + JSONL writer
 - [ ] `embargo/cli.py` — `screen`, `ledger`, `cross`, `eval`, `trace` subcommands
@@ -74,3 +83,5 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
 - 2026-09-18 — `embargo/access.py` built via TDD: SQLite `Access` class + pure `authorized()`.
 - 2026-09-18 — `embargo/prefilter.py` built via TDD: `candidate_facts()` with keyword + authorization
   matching, both reported as reasons.
+- 2026-09-18 — `embargo/resolver.py` built via TDD: `Resolver` Protocol, `FakeResolver`, `ModelResolver`
+  (injected model_call, retry-then-raise, span verbatim-check).
