@@ -1,0 +1,136 @@
+import json
+from datetime import datetime
+
+from embargo.decision import decide
+from embargo.models import Fact, FactState, MaterialityLevel, Message, Resolution, ResolutionMode
+from embargo.prefilter import candidate_facts
+from embargo.trace import build_resolver_failure_trace, build_trace, read_traces, write_trace
+
+FACT = Fact(
+    fact_id="F047",
+    summary="Acme is acquiring Beta",
+    entities=["ACME"],
+    aliases=[],
+    state=FactState.ANNOUNCED,
+    recorded_at=datetime(2026, 1, 1),
+    materiality=[(datetime(2026, 1, 1), MaterialityLevel.HIGH)],
+    announced_at=datetime(2026, 1, 1),
+)
+
+MESSAGE = Message(
+    message_id="M001",
+    sender="alice",
+    recipients=["bob"],
+    timestamp=datetime(2026, 6, 1),
+    body="ACME news",
+)
+
+
+def _built_trace(**overrides):
+    candidates = candidate_facts(MESSAGE, [FACT], [])
+    resolutions = [
+        Resolution(fact_id="F047", mode=ResolutionMode.CONVEYS, confidence=0.9, span="ACME news")
+    ]
+    decision = decide(MESSAGE, resolutions, {"F047": FACT}, [])
+    return build_trace(MESSAGE, candidates, resolutions, decision, **overrides)
+
+
+def test_build_trace_includes_message_fields_and_ledger_version_placeholder():
+    record = _built_trace(ledger_version=0)
+
+    assert record["message_id"] == "M001"
+    assert record["sender"] == "alice"
+    assert record["recipients"] == ["bob"]
+    assert record["timestamp"] == "2026-06-01T00:00:00"
+    assert record["ledger_version"] == 0
+    assert record["reason"] is None
+
+
+def test_build_trace_includes_candidates_with_reasons():
+    record = _built_trace()
+
+    assert record["candidates"] == [{"fact_id": "F047", "reasons": ["entity_match"]}]
+
+
+def test_build_trace_includes_resolution_span_and_check_details():
+    record = _built_trace()
+
+    fact_result = record["fact_results"][0]
+    assert fact_result["fact_id"] == "F047"
+    assert fact_result["span"] == "ACME news"
+    assert fact_result["mode"] == "conveys"
+    assert fact_result["verdict"] == "violation_upstream_leak"  # nobody authorized
+    assert fact_result["checks"]["sender_authorized"] is False
+    assert fact_result["checks"]["recipient_authorized"] == {"bob": False}
+
+
+def test_build_trace_records_no_override_by_default():
+    record = _built_trace()
+
+    assert record["as_of_override"] is None
+    assert record["recipients_override"] is None
+
+
+def test_build_trace_records_overrides_when_given():
+    record = _built_trace(
+        as_of_override=datetime(2026, 7, 1), recipients_override=["carol"]
+    )
+
+    assert record["as_of_override"] == "2026-07-01T00:00:00"
+    assert record["recipients_override"] == ["carol"]
+
+
+def test_build_resolver_failure_trace_is_review_with_reason():
+    candidates = candidate_facts(MESSAGE, [FACT], [])
+    record = build_resolver_failure_trace(MESSAGE, candidates)
+
+    assert record["verdict"] == "review"
+    assert record["reason"] == "resolver_output_invalid"
+    assert record["fact_results"] == []
+
+
+def test_write_trace_then_read_traces_round_trips(tmp_path):
+    path = tmp_path / "traces.jsonl"
+    record = _built_trace()
+
+    write_trace(path, record)
+    records = read_traces(path)
+
+    assert records == [record]
+    # confirm it's genuinely one-JSON-object-per-line
+    lines = path.read_text().strip().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0]) == record
+
+
+def test_read_traces_returns_all_records_for_repeated_screenings(tmp_path):
+    path = tmp_path / "traces.jsonl"
+    write_trace(path, _built_trace(as_of_override=datetime(2026, 1, 1)))
+    write_trace(path, _built_trace(as_of_override=datetime(2026, 6, 1)))
+    write_trace(path, _built_trace(as_of_override=datetime(2026, 12, 1)))
+
+    records = read_traces(path, message_id="M001")
+
+    assert len(records) == 3
+    assert [r["as_of_override"] for r in records] == [
+        "2026-01-01T00:00:00",
+        "2026-06-01T00:00:00",
+        "2026-12-01T00:00:00",
+    ]
+
+
+def test_read_traces_filters_by_message_id(tmp_path):
+    path = tmp_path / "traces.jsonl"
+    write_trace(path, _built_trace())
+    other = dict(_built_trace())
+    other["message_id"] = "M999"
+    write_trace(path, other)
+
+    records = read_traces(path, message_id="M999")
+
+    assert len(records) == 1
+    assert records[0]["message_id"] == "M999"
+
+
+def test_read_traces_returns_empty_list_when_file_missing(tmp_path):
+    assert read_traces(tmp_path / "does-not-exist.jsonl") == []

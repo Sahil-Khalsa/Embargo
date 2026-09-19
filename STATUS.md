@@ -45,8 +45,26 @@ first module built; everything else in the module list is still to do.
       whose `span` isn't verbatim in the message body (spec §3.4). TDD'd in `tests/test_resolver.py`
       (10 tests, all passing — including ModelResolver's own tests, which per spec §7 are the one place a
       non-FakeResolver test is allowed, using an injected fake `model_call` rather than real network access).
-- [ ] `embargo/decision.py` — pure verdict logic, no I/O, no import of `resolver.py`
-- [ ] `embargo/trace.py` — trace record construction + JSONL writer
+- [x] `embargo/decision.py` — `decide(message, resolutions, facts, crossings, threshold=0.6) -> MessageDecision`.
+      Implements gate (§4.3: mentions don't proceed and get no verdict; low-confidence conveys → `REVIEW`
+      reason `low_confidence` without touching ledger state at all) and per-fact decision (§4.4: is_cleared →
+      materiality none → sender authorized → recipient authorized → clean, in that order). Per advisor
+      review: all party-authorization lookups are computed unconditionally (never short-circuited) so the
+      trace can show every check even when the verdict was decided by an earlier one. Message-level verdict
+      is `max()` over contributing per-fact verdicts using `Verdict`'s built-in severity ordering; no
+      contributing verdicts (all `mentions`, or empty) defaults to `CLEAN`. Imports `access.authorized` and
+      `ledger.materiality_at` (deterministic, allowed) but never `resolver` (asserted by a source-scan test).
+      TDD'd in `tests/test_decision.py` (12 tests, all passing).
+- [x] `embargo/trace.py` — `build_trace()` joins candidates (with reasons), every resolution (including
+      `mentions`/below-threshold, span included) with its `FactDecision` check details, plus message-level
+      verdict and a `ledger_version` placeholder (§13.1 wires this up for real later). Separate
+      `build_resolver_failure_trace()` for the §4.2 resolver-exhausted-retries path (`review` /
+      `resolver_output_invalid`), since `decision.py` can't know about resolver failures. Records
+      `as_of_override`/`recipients_override` alongside the effective values actually used, so a `--as-of`/
+      `--recipients` override is visible in the trace, not just its effect. `write_trace`/`read_traces` do
+      JSONL append/read; `read_traces(path, message_id=...)` returns **every** record for that id, in write
+      order — needed because the V0 demo screens one message three ways. TDD'd in `tests/test_trace.py`
+      (10 tests, all passing).
 - [ ] `embargo/cli.py` — `screen`, `ledger`, `cross`, `eval`, `trace` subcommands
 
 ### Corpus & eval (spec §8)
@@ -85,3 +103,11 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   matching, both reported as reasons.
 - 2026-09-18 — `embargo/resolver.py` built via TDD: `Resolver` Protocol, `FakeResolver`, `ModelResolver`
   (injected model_call, retry-then-raise, span verbatim-check).
+- 2026-09-18 — Consulted advisor before decision.py/trace.py/cli.py: return per-fact check records (not a
+  bare Verdict) so the trace can reconstruct every check; watch for the criterion-1 "clean by vacuum" trap
+  where no candidates reach the resolver at an --as-of timestamp; report resolver and end-to-end metrics
+  separately; verified PyYAML is available for corpus/*.yaml.
+- 2026-09-18 — `embargo/decision.py` built via TDD: `decide()` — gate + per-fact checks (unconditionally
+  computed) + message-level severity via Verdict ordering.
+- 2026-09-18 — `embargo/trace.py` built via TDD: `build_trace()`/`build_resolver_failure_trace()` +
+  JSONL `write_trace()`/`read_traces()`.
