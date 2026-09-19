@@ -23,8 +23,18 @@ first module built; everything else in the module list is still to do.
       `cleared_at` AND real elapsed time ≥ it; abandoned→cleared is the unconditional manual-compliance
       path, no elapsed-time gate). Everything else raises `ValueError`. Standalone `materiality_at(fact, at)`
       pure function alongside it. TDD'd in `tests/test_ledger.py` (16 tests, all passing).
-- [ ] `embargo/access.py` — access graph, `authorized()`
-- [ ] `embargo/prefilter.py` — candidate selection
+- [x] `embargo/access.py` — `Access` class (SQLite-backed `crossings` table) with `add_crossing`/
+      `list_crossings`, plus a pure `authorized(crossings, party_id, fact_id, at)` function (mirrors
+      `ledger.materiality_at`'s pure-function-over-in-memory-data pattern). No transitivity: `authorized()`
+      only ever checks a direct `Crossing` row for that exact party — nothing infers access from someone
+      else's. TDD'd in `tests/test_access.py` (9 tests, all passing).
+- [x] `embargo/prefilter.py` — `candidate_facts(message, facts, crossings)` returning `Candidate(fact, reasons)`
+      records, `reasons` a set drawn from `{entity_match, alias_match, party_authorization}` (union, not
+      first-match — a fact can hit more than one). Word-boundary, case-insensitive keyword matching against
+      entities/aliases; party-authorization check runs `access.authorized()` for sender and every recipient
+      against each fact, which is what catches an oblique reference with no keyword hit (spec §4.1's
+      "essential" case). Reasons are carried through for the trace's candidate-selection record (§4.5), not
+      recomputed later. TDD'd in `tests/test_prefilter.py` (9 tests, all passing).
 - [ ] `embargo/resolver.py` — `Resolver` Protocol, `ModelResolver`, `FakeResolver`
 - [ ] `embargo/decision.py` — pure verdict logic, no I/O, no import of `resolver.py`
 - [ ] `embargo/trace.py` — trace record construction + JSONL writer
@@ -61,3 +71,6 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
 - 2026-09-18 — Git repo created, pushed to https://github.com/Sahil-Khalsa/Embargo.
 - 2026-09-18 — `embargo/models.py` built via TDD: enums + Fact/Crossing/Message/Resolution dataclasses.
 - 2026-09-18 — `embargo/ledger.py` built via TDD: SQLite `Ledger`, state transitions, `materiality_at()`.
+- 2026-09-18 — `embargo/access.py` built via TDD: SQLite `Access` class + pure `authorized()`.
+- 2026-09-18 — `embargo/prefilter.py` built via TDD: `candidate_facts()` with keyword + authorization
+  matching, both reported as reasons.
