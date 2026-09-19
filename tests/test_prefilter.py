@@ -33,7 +33,9 @@ def test_candidate_when_entity_appears_in_body():
     candidates = candidate_facts(message, [fact], [])
 
     assert [c.fact for c in candidates] == [fact]
-    assert candidates[0].reasons == {"entity_match"}
+    # Also picked up by similarity_candidates: "ACME" is a shared, rare
+    # token between the fact text and the (short) message body.
+    assert candidates[0].reasons == {"entity_match", "semantic_match"}
 
 
 def test_candidate_when_alias_appears_in_body():
@@ -42,7 +44,7 @@ def test_candidate_when_alias_appears_in_body():
 
     candidates = candidate_facts(message, [fact], [])
 
-    assert candidates[0].reasons == {"alias_match"}
+    assert candidates[0].reasons == {"alias_match", "semantic_match"}
 
 
 def test_no_false_positive_on_substring_match():
@@ -108,7 +110,7 @@ def test_candidate_reasons_union_when_both_keyword_and_authorization_hit():
 
     candidates = candidate_facts(message, [fact], [crossing])
 
-    assert candidates[0].reasons == {"entity_match", "party_authorization"}
+    assert candidates[0].reasons == {"entity_match", "party_authorization", "semantic_match"}
 
 
 def test_candidate_reports_both_entity_and_alias_match_when_both_present():
@@ -117,4 +119,4 @@ def test_candidate_reports_both_entity_and_alias_match_when_both_present():
 
     candidates = candidate_facts(message, [fact], [])
 
-    assert candidates[0].reasons == {"entity_match", "alias_match"}
+    assert candidates[0].reasons == {"entity_match", "alias_match", "semantic_match"}

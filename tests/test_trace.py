@@ -49,7 +49,7 @@ def test_build_trace_includes_message_fields_and_ledger_version_placeholder():
 def test_build_trace_includes_candidates_with_reasons():
     record = _built_trace()
 
-    assert record["candidates"] == [{"fact_id": "F047", "reasons": ["entity_match"]}]
+    assert record["candidates"] == [{"fact_id": "F047", "reasons": ["entity_match", "semantic_match"]}]
 
 
 def test_build_trace_includes_resolution_span_and_check_details():
@@ -132,11 +132,14 @@ def test_write_trace_then_read_traces_round_trips(tmp_path):
     write_trace(path, record)
     records = read_traces(path)
 
-    assert records == [record]
+    # write_trace adds prev_hash (spec 13.4's hash chain) at write time --
+    # None here since this is the first record in the file.
+    expected = dict(record, prev_hash=None)
+    assert records == [expected]
     # confirm it's genuinely one-JSON-object-per-line
     lines = path.read_text().strip().splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0]) == record
+    assert json.loads(lines[0]) == expected
 
 
 def test_read_traces_returns_all_records_for_repeated_screenings(tmp_path):

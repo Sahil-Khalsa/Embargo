@@ -1,0 +1,36 @@
+# FA02 intentionally has NO crossings at all: neither alice nor bob is
+# authorized. This is what makes MADV03 a genuine prefilter miss rather than
+# a decision-layer question -- see messages.yaml.
+- party_id: alice
+  fact_id: FA01
+  effective_from: "2026-01-01T00:00:00"
+- party_id: bob
+  fact_id: FA01
+  effective_from: "2026-01-01T00:00:00"
+
+- party_id: alice
+  fact_id: FA03
+  effective_from: "2026-01-01T00:00:00"
+- party_id: bob
+  fact_id: FA03
+  effective_from: "2026-01-01T00:00:00"
+
+- party_id: alice
+  fact_id: FA04
+  effective_from: "2026-01-01T00:00:00"
+- party_id: bob
+  fact_id: FA04
+  effective_from: "2026-01-01T00:00:00"
+
+- party_id: alice
+  fact_id: FA05
+  effective_from: "2026-01-01T00:00:00"
+- party_id: bob
+  fact_id: FA05
+  effective_from: "2026-01-01T00:00:00"
+
+# FA06: sender authorized, recipient is NOT -- a true disclosure violation
+# if the fact is caught.
+- party_id: alice
+  fact_id: FA06
+  effective_from: "2026-01-01T00:00:00"

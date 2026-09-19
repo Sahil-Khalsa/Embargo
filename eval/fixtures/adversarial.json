@@ -1,0 +1,20 @@
+{
+  "MADV01": [
+    {"fact_id": "FA01", "mode": "conveys", "confidence": 0.55, "span": "Nothing going on with Acme"}
+  ],
+  "MADV02": [
+    {"fact_id": "FA02", "mode": "mentions", "confidence": 0.9, "span": "Delta's operations"}
+  ],
+  "MADV03": [],
+  "MADV04": [],
+  "MADV05": [
+    {"fact_id": "FA04", "mode": "conveys", "confidence": 0.65, "span": "Blue Horizon report"}
+  ],
+  "MADV06": [],
+  "MADV07": [
+    {"fact_id": "FA05", "mode": "mentions", "confidence": 0.8, "span": "the Zeta merger is proceeding as planned"}
+  ],
+  "MADV08": [
+    {"fact_id": "FA06", "mode": "conveys", "confidence": 0.85, "span": "the Sigma acquisition closes Friday"}
+  ]
+}

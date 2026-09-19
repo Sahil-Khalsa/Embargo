@@ -12,7 +12,7 @@ from embargo.models import Crossing, Fact, FactState, MaterialityLevel, Message
 from embargo.pipeline import DEFAULT_THRESHOLD, screen_message
 from embargo.rescreen import rescreen_stale_traces
 from embargo.resolver import FakeResolver
-from embargo.trace import read_traces, write_trace
+from embargo.trace import read_traces, verify_chain, write_trace
 
 DEFAULT_DB = "embargo.db"
 DEFAULT_MESSAGES = "corpus/messages.yaml"
@@ -228,14 +228,43 @@ def cmd_trace_show(args: argparse.Namespace) -> None:
         print(f"fact_results: {record['fact_results']}")
 
 
+def cmd_trace_verify(args: argparse.Namespace) -> None:
+    result = verify_chain(args.trace_file)
+    if result.ok:
+        print("chain intact")
+    else:
+        print(f"chain broken at line {result.broken_at_line}")
+
+
 # --- eval command ---------------------------------------------------------------
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
     from eval.run_eval import format_report, run_eval
 
-    report = run_eval(args.facts, args.crossings, args.messages, args.fixtures, threshold=args.threshold)
+    if args.adversarial:
+        facts = args.facts or "corpus/adversarial/facts.yaml"
+        crossings = args.crossings or "corpus/adversarial/crossings.yaml"
+        messages = args.messages or "corpus/adversarial/messages.yaml"
+        fixtures = args.fixtures or "eval/fixtures/adversarial.json"
+    else:
+        facts = args.facts or "corpus/facts.yaml"
+        crossings = args.crossings or "corpus/crossings.yaml"
+        messages = args.messages or "corpus/messages.yaml"
+        fixtures = args.fixtures or DEFAULT_FIXTURES
+
+    report = run_eval(facts, crossings, messages, fixtures, threshold=args.threshold)
     print(format_report(report))
+
+
+# --- calibrate command ------------------------------------------------------------
+
+
+def cmd_calibrate(args: argparse.Namespace) -> None:
+    from eval.calibrate import format_calibration_report, sweep_thresholds
+
+    points = sweep_thresholds(args.facts, args.crossings, args.messages, args.fixtures)
+    print(format_calibration_report(points, budget=args.budget))
 
 
 # --- argparse wiring --------------------------------------------------------------
@@ -306,12 +335,21 @@ def build_parser() -> argparse.ArgumentParser:
     screen_parser.set_defaults(func=cmd_screen)
 
     eval_parser = subparsers.add_parser("eval")
-    eval_parser.add_argument("--facts", default="corpus/facts.yaml")
-    eval_parser.add_argument("--crossings", default="corpus/crossings.yaml")
-    eval_parser.add_argument("--messages", default="corpus/messages.yaml")
-    eval_parser.add_argument("--fixtures", default=DEFAULT_FIXTURES)
+    eval_parser.add_argument("--facts", default=None)
+    eval_parser.add_argument("--crossings", default=None)
+    eval_parser.add_argument("--messages", default=None)
+    eval_parser.add_argument("--fixtures", default=None)
+    eval_parser.add_argument("--adversarial", action="store_true")
     eval_parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     eval_parser.set_defaults(func=cmd_eval)
+
+    calibrate_parser = subparsers.add_parser("calibrate")
+    calibrate_parser.add_argument("--facts", default="corpus/facts.yaml")
+    calibrate_parser.add_argument("--crossings", default="corpus/crossings.yaml")
+    calibrate_parser.add_argument("--messages", default="corpus/messages.yaml")
+    calibrate_parser.add_argument("--fixtures", default=DEFAULT_FIXTURES)
+    calibrate_parser.add_argument("--budget", type=float, default=None)
+    calibrate_parser.set_defaults(func=cmd_calibrate)
 
     rescreen_parser = subparsers.add_parser("rescreen")
     rescreen_parser.add_argument("--since", type=int, required=True)
@@ -327,6 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
     trace_show_parser.add_argument("message_id")
     trace_show_parser.add_argument("--trace-file", default=DEFAULT_TRACE_FILE)
     trace_show_parser.set_defaults(func=cmd_trace_show)
+
+    trace_verify_parser = trace_sub.add_parser("verify")
+    trace_verify_parser.add_argument("--trace-file", default=DEFAULT_TRACE_FILE)
+    trace_verify_parser.set_defaults(func=cmd_trace_verify)
 
     return parser
 

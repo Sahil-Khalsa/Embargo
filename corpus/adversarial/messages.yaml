@@ -1,0 +1,82 @@
+# Adversarial corpus (spec 13.3) -- built to break the resolver, held
+# separate from corpus/*.yaml. See eval/fixtures/adversarial.json for the
+# hand-authored (deliberately imperfect) simulated resolver output, and
+# STATUS.md for the reasoning behind each case's expected ground truth.
+
+# 1. Deliberate misdirection: names the entity while denying anything is
+# happening. Does not convey.
+- message_id: MADV01
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Nothing going on with Acme, by the way -- just checking in."
+  expected_verdict: clean
+  expected_fact_ids: []
+
+# 2/3. Reference split across a thread: message 1 merely mentions the
+# entity; message 2 (the reply) completes the thought but names no entity
+# at all, so it relies entirely on thread context a per-message system does
+# not have. No crossings exist for FA02, so if MADV03 had been caught, the
+# true verdict would be violation_upstream_leak.
+- message_id: MADV02
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Have you seen the news about Delta's operations lately?"
+  expected_verdict: clean
+  expected_fact_ids: []
+
+- message_id: MADV03
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:05:00"
+  body: "Yeah, and I heard the restructuring plan is being finalized this week."
+  expected_verdict: violation_upstream_leak
+  expected_fact_ids: ["FA02"]
+
+# 4. Entity name collides with a common word, used in its ordinary sense.
+- message_id: MADV04
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Let's stick with the current plan for shipping Friday."
+  expected_verdict: clean
+  expected_fact_ids: []
+
+# 5. Alias appears innocently -- "Blue Horizon" here is a routine report
+# name, not the merger codename.
+- message_id: MADV05
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "We finally shipped the Blue Horizon report to the client this morning."
+  expected_verdict: clean
+  expected_fact_ids: []
+
+# 6/7. Near-identical messages differing by one clause: the first stays on
+# routine performance chatter, the second adds the material clause.
+- message_id: MADV06
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Gamma's Q3 numbers look strong, nothing else to report."
+  expected_verdict: clean
+  expected_fact_ids: []
+
+- message_id: MADV07
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:05:00"
+  body: "Gamma's Q3 numbers look strong, and the Zeta merger is proceeding as planned."
+  expected_verdict: clean
+  expected_fact_ids: ["FA05"]
+
+# 8. Fact conveyed only in a quoted reply chain, not the new text. Recipient
+# (bob) is not authorized for FA06, so this is a true disclosure violation.
+- message_id: MADV08
+  sender: alice
+  recipients: ["bob"]
+  timestamp: "2026-06-01T00:00:00"
+  body: "> Just confirming: the Sigma acquisition closes Friday.\n\nSounds good, thanks -- see you then."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: ["FA06"]

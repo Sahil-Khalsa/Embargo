@@ -74,6 +74,7 @@ class EvalReport:
     conveys_mentions_confusion: int
     verdict_accuracy: float
     confusion_matrix: dict[str, dict[str, int]]
+    prefilter_recall: float
 
 
 def run_eval(
@@ -95,6 +96,7 @@ def run_eval(
 
     true_positives = false_positives = missed = confused = 0
     correct = 0
+    prefilter_reached = prefilter_total = 0
 
     for item in raw_messages:
         message = _message_from_dict(item)
@@ -103,6 +105,14 @@ def run_eval(
 
         candidates = candidate_facts(message, facts, crossings)
         candidate_fact_objs = [c.fact for c in candidates]
+        candidate_ids = {c.fact.fact_id for c in candidates}
+
+        # Computed from prefilter output alone, never from resolutions: a
+        # fact the resolver never even saw must count as a miss here, since
+        # it's invisible to every resolver-level metric and looks clean.
+        prefilter_total += len(expected_fact_ids)
+        prefilter_reached += len(expected_fact_ids & candidate_ids)
+
         resolutions = resolver.resolve(message, candidate_fact_objs)
 
         conveyed = {r.fact_id for r in resolutions if r.mode == ResolutionMode.CONVEYS}
@@ -130,6 +140,7 @@ def run_eval(
     )
     total = len(raw_messages)
     verdict_accuracy = correct / total if total else 1.0
+    prefilter_recall = prefilter_reached / prefilter_total if prefilter_total else 1.0
 
     return EvalReport(
         total_messages=total,
@@ -138,6 +149,7 @@ def run_eval(
         conveys_mentions_confusion=confused,
         verdict_accuracy=verdict_accuracy,
         confusion_matrix=confusion,
+        prefilter_recall=prefilter_recall,
     )
 
 
@@ -150,6 +162,9 @@ def format_report(report: EvalReport) -> str:
         f"precision: {report.resolver_precision:.3f}",
         f"recall: {report.resolver_recall:.3f}",
         f"conveys/mentions confusion (expected conveys, predicted mentions): {report.conveys_mentions_confusion}",
+        "",
+        "-- prefilter metrics --",
+        f"prefilter recall (expected fact reached the resolver at all): {report.prefilter_recall:.3f}",
         "",
         "-- end-to-end verdict accuracy --",
         f"accuracy: {report.verdict_accuracy:.3f}",

@@ -5,11 +5,14 @@ this file, not memory or chat history, is the record of where the build stands.
 
 Last updated: 2026-09-18
 
-## Current tier: V0 — COMPLETE, all five acceptance criteria verified
+## Current tier: V1 — all of §13.1–§13.5 coded, all five acceptance criteria verified
 
 Repo has a git history (https://github.com/Sahil-Khalsa/Embargo, though the latest commits are currently
-stuck locally — see the push note in the log below). Every module, the corpus, and the eval harness are
-built and passing. V1 has not been started; do not pull any V1/V2 feature forward without discussing it.
+stuck locally — see the push note in the log below). V0 is complete. All of V1 (§13.1–§13.5) is now coded
+and tested, per the user's explicit instruction to finish all V1 coding before the next commit/push, which
+will be done together rather than per-section as V0 and §13.1 were. Nothing has been committed since
+§13.1 landed (commit `048cfd2`) — four sections' worth of work (§13.2–§13.5) sits uncommitted in the working
+tree, staged for one combined commit+push once the user is ready.
 
 ## V0 — must land before V1 starts (spec §9)
 
@@ -187,9 +190,113 @@ the trace file has two records for that message, the second `supersedes` the fir
 
 **V1 full suite so far: 126 tests, all passing.**
 
-### §13.2–§13.5 — not started
-Calibration tooling, adversarial corpus, tamper-evident trace store, semantic prefilter. Build in this order
-per spec §10 (within a tier, build in the order the sections are written).
+### §13.2 — Calibration tooling — COMPLETE
+- [x] `eval/calibrate.py` — new module. `CalibrationPoint` (threshold, resolver_precision, resolver_recall,
+      review_share, verdict_accuracy). `sweep_thresholds()` runs `DEFAULT_THRESHOLDS` (0.0–1.0 step 0.05, or a
+      custom list) over the corpus. **Key reinterpretation, confirmed with the advisor before coding:**
+      precision/recall here must be threshold-*dependent* or "at each point" in the spec text is meaningless —
+      a fact counts as correctly identified only when `mode == conveys AND confidence >= threshold` (i.e. it
+      actually clears the gate), not merely `mode == conveys` as in the plain V0 eval. `review_share` is the
+      fraction of *messages* whose message-level verdict is `review` (not a fraction of resolutions).
+- [x] `best_threshold_for_budget(points, budget)` — among thresholds with `review_share <= budget`, picks max
+      `resolver_recall`, ties broken toward the *lower* threshold; returns `None` (reported explicitly, never
+      silently substituted) if no threshold fits. Recall is weighted over precision per spec's own rationale
+      ("a missed leak costs more than a message a human glances at").
+- [x] `embargo calibrate [--budget <fraction>]` wired into `cli.py`.
+- [x] Verified: recall is monotonically non-increasing and review_share monotonically non-decreasing across
+      the sweep (`tests/test_calibrate.py`) — the check the advisor specifically flagged to catch an
+      accidentally-threshold-independent implementation. Also ran against the real V0 corpus by hand: recall
+      drops from 1.000 to 0.000 and review_share climbs from 0.000 to 0.900 across the full 0.0–1.0 sweep,
+      with the single `review`-ground-truth message (M015, 0.35 confidence) driving the middle of the curve.
+
+### §13.3 — Adversarial eval cases — COMPLETE
+- [x] `corpus/adversarial/{facts,crossings,messages}.yaml` + `eval/fixtures/adversarial.json` — a second,
+      disjoint corpus (6 facts, 8 messages) covering all six required categories: misdirection, a fact split
+      across a two-message reply thread with no single conveying message, an entity name colliding with a
+      common word ("Current"), an alias that's also an innocent internal document name ("Blue Horizon"), a
+      near-identical qualifier pair (adds one clause), and a fact conveyed only inside quoted reply text.
+- [x] **The fixtures are deliberately imperfect**, not hand-tuned to pass — per the advisor's explicit warning
+      that a corpus scoring 1.000 "proves nothing." Each fixture encodes a specific, reasoned failure: the
+      misdirection case gets a false-positive low-confidence read; the thread-split fact is never surfaced to
+      the resolver at all (zero crossings for that fact, no entity text in the completing message — a genuine
+      *prefilter* miss, not a resolver miss); the alias case gets a false-positive from literal span-matching;
+      the near-identical pair gets a conveys/mentions confusion; only the quoted-reply case and the
+      common-word-collision case are handled correctly, showing the system isn't hopeless, just degraded.
+      Result on this corpus: precision 0.333, recall 0.333, verdict accuracy 0.750 — genuinely worse than
+      V0's 1.000/1.000/1.000, never merged into the same report.
+- [x] `embargo eval --adversarial` — convenience flag on the existing `eval` command swaps in the adversarial
+      corpus's default paths; explicit `--facts`/etc. still override. No new report format was needed since
+      `run_eval()` already produces one report per invocation — running it against two different corpora
+      *is* "reporting separately," so no merging logic exists to accidentally combine them.
+
+### §13.4 — Tamper-evident trace store — COMPLETE
+- [x] `embargo/trace.py` — `write_trace()` now reads the last raw line in the file (if any), stores
+      `sha256(prev_line)` as `record["prev_hash"]` (`None` for the first record), then appends the record
+      canonically serialized (`sort_keys=True, separators=(",", ":")`) — same canonical form `trace_id`
+      already used, so the two hashing schemes agree on what "the bytes of a record" means.
+      `trace_id` (content hash, computed by `_finalize()` before `prev_hash` exists) and `prev_hash`
+      (chain position, added at write time) stay deliberately independent — a record's identity doesn't
+      depend on where it landed in the file.
+- [x] All file reads/writes for chain purposes use `open(..., newline="")`, both directions, so a Windows
+      autocrlf checkout can never silently turn `\n` into `\r\n` under the hasher and produce a false "tamper"
+      report — the advisor flagged this as the specific trap here.
+- [x] `verify_chain(path) -> ChainVerification(ok, broken_at_line)` walks the file and reports the first
+      record whose stored `prev_hash` doesn't match the SHA-256 of the immediately preceding raw line.
+      `embargo trace verify [--trace-file]` prints `chain intact` or `chain broken at line N`.
+- [x] Re-screens already only ever append (established in §13.1) — no change needed for that requirement.
+- [x] **Acceptance criterion 4 verified directly**: `tests/test_trace_chain.py::test_verify_chain_detects_hand_edited_record`
+      writes three records, literally rewrites the middle record's raw bytes on disk, and asserts
+      `verify_chain` reports `broken_at_line == 3` — the first point verification actually fails (the record
+      *after* the edited one, since that's whose `prev_hash` claim no longer matches).
+- [x] Changing `write_trace`'s byte output (default → canonical separators, plus the new field) broke one
+      existing round-trip equality test (`test_trace.py::test_write_trace_then_read_traces_round_trips`),
+      fixed by comparing against `dict(record, prev_hash=None)` instead of the bare record — a real behavior
+      change, not a regression. Ran the full suite immediately after this change per the advisor's sequencing
+      note, before starting §13.5.
+
+### §13.5 — Semantic prefilter — COMPLETE
+- [x] `embargo/prefilter.py` — `similarity_candidates()`: bag-of-words cosine similarity (stdlib `Counter` +
+      `math.sqrt`, no external dependency) between the message body and each fact's `summary + entities +
+      aliases` text, threshold 0.3 by default. **Deliberate spec-§0 SHOULD deviation, documented in the
+      function's own docstring**: no ML dependency, no network embedding call — a real embedding backend can
+      replace the function body without touching any caller, since the signature (message + facts in, fact_id
+      set out) stays the same either way. Named honestly as "similarity", not "embedding", per the advisor's
+      explicit note not to overclaim what a bag-of-words method actually does (literal vocabulary overlap
+      only, not paraphrase/true semantic matching).
+- [x] `candidate_facts()` unions a third `semantic_match` reason alongside `entity_match`/`alias_match`/
+      `party_authorization`; entity/alias matching is unchanged and still fires independently (spec's MUST).
+- [x] **Tuning-trap guard (per the advisor's specific warning)**: checked the real V0 corpus by hand — average
+      candidates per message is ~16/23 facts either way, entirely from the pre-existing `party_authorization`
+      mechanism (verified by re-running with the similarity threshold effectively disabled: identical
+      average). The new semantic layer adds **zero** new candidates anywhere in the V0 corpus and only two
+      (both already-`entity_match`ed) in the adversarial corpus — it is not silently inflating candidate sets.
+      `tests/test_prefilter_semantic.py` also asserts directly against the real corpus's M024 ("lunch plans")
+      message: no fact is surfaced by similarity alone.
+- [x] Five existing `test_prefilter.py`/`test_trace.py` assertions on exact `reasons` sets started failing
+      once the semantic layer was added, because their fixtures reuse the entity name between the fact and a
+      very short message body — cosine similarity on short texts is naturally high when they share even one
+      rare/distinctive token. Updated the expected sets to include `semantic_match` rather than re-engineering
+      the fixtures to dodge it; this is honest behavior, not a bug.
+- [x] `eval/run_eval.py` — new `EvalReport.prefilter_recall` field, computed purely from `candidate_facts()`
+      output (never from resolutions): of all `expected_fact_ids` across the corpus, the fraction that
+      actually reached the resolver as a candidate at all. V0 corpus: 1.000 (everything keyword-matches).
+      Adversarial corpus: 0.667 (the thread-split case's total prefilter miss pulls it down) — **this is
+      exactly the "invisible clean verdict" failure mode spec §13.5 warns about**, now visible as its own
+      number instead of being masked by resolver or verdict-accuracy metrics.
+- [x] **Acceptance criterion 5 verified directly**: `tests/test_prefilter_recall_metric.py` — a fact expected
+      on two messages, keyword-matched on one and mentioned nowhere in the other, asserts `prefilter_recall
+      == 0.5`, independent of what any fixture claims the resolver returned.
+
+**V1 full suite: 159 tests, all passing. All five V1 acceptance criteria (§13.6) verified directly:**
+1. Auto-rescreen on late fact entry — `test_cli_rescreen.py` (§13.1)
+2. `embargo calibrate` sweep table — `test_cli_calibrate.py` (§13.2)
+3. Adversarial corpus runs and reports separately — `test_adversarial_eval.py`, `test_cli_eval_adversarial.py` (§13.3)
+4. `embargo trace verify` detects a hand-edited record — `test_trace_chain.py`, `test_cli_trace_verify.py` (§13.4)
+5. Prefilter recall reported as its own metric — `test_prefilter_recall_metric.py` (§13.5)
+
+**Per the user's explicit instruction ("complete coding first then we will commit and push together"), none
+of §13.2–§13.5 has been committed yet.** All V1 coding is now done; next step is a single combined
+commit+push with the user, not a per-section one.
 
 ## V2 — blocked on V1 (spec §14)
 Not started. Criteria: spec §14.5.
@@ -246,3 +353,40 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   criterion 2 by 10 individual hard-case tests, criterion 3 by `--cov=embargo.decision` showing 100%,
   criterion 4 by trace tests, criterion 5 by grepping for networking libraries and `ModelResolver` references
   (none found in the eval/screen path). **V0 is complete: 104 tests passing.**
+- 2026-09-18 — §13.1 (re-screening) built via TDD and committed (`048cfd2`, 126 tests). User then said
+  "complete coding first then we will commit and push together" — workflow changed from per-section
+  commit/push to one combined commit+push at the end of all V1 coding.
+- 2026-09-18 — Consulted advisor before §13.2–§13.5: confirmed the threshold-dependent precision/recall
+  reinterpretation for calibration, the budget/tie-break semantics, the stdlib bag-of-words stand-in for
+  "embedding-based retrieval" (named honestly, not as "embedding"), the hash-chain design (canonical
+  serialization + raw-line hashing + `newline=""` to dodge a CRLF false-tamper trap), and the requirement
+  that the adversarial corpus's fixtures encode real, reasoned mistakes rather than a hand-tuned 1.000.
+- 2026-09-18 — `eval/calibrate.py` built via TDD (9 tests): threshold sweep, `best_threshold_for_budget()`,
+  `embargo calibrate [--budget]`. Verified monotonicity (recall non-increasing, review_share non-decreasing)
+  on both a hand-verifiable synthetic corpus and the real V0 corpus. **136 tests passing.**
+- 2026-09-18 — Adversarial corpus built (6 facts, 8 messages, all six required categories) with deliberately
+  imperfect fixtures; `embargo eval --adversarial` added. Hand-computed expected metrics (precision/recall
+  0.333, accuracy 0.750) matched the actual `run_eval()` output on the first run. **142 tests passing.**
+- 2026-09-18 — Hash chain added to `trace.py` (`write_trace` now stores `prev_hash`; new `verify_chain()`),
+  `embargo trace verify` wired into the CLI. One pre-existing round-trip test updated for the new field (a
+  real behavior change). Full suite re-run immediately after, before starting §13.5, per the advisor's
+  sequencing note. **150 tests passing.**
+- 2026-09-18 — Semantic prefilter (`similarity_candidates()`) added via TDD, RED-first (had to revert one
+  premature implementation attempt written before its test — caught by re-reading the TDD skill's Iron Law —
+  and redo it test-first). Verified against the real corpus that it adds zero new candidates on V0 and only
+  two (already `entity_match`ed) on the adversarial corpus, so the "tuning trap" the advisor warned about
+  did not materialize. Five existing tests' exact `reasons` assertions updated to include `semantic_match`
+  where short-text cosine similarity genuinely (if narrowly) crosses the 0.3 threshold. `EvalReport` gained
+  `prefilter_recall`, computed purely from prefilter output. **157 tests passing.**
+- 2026-09-18 — Consulted advisor before declaring V1 coding complete; it caught a real bug:
+  `best_threshold_for_budget` always returns the smallest threshold in the sweep for any non-negative
+  budget, because `resolver_recall(t)` is monotone non-increasing in `t` (TP(t) only shrinks as the gate
+  tightens) and `review_share(0.0)` is always `0.0` — confirmed both mathematically and empirically
+  (`--budget 0.0/0.05/0.3/0.9` all recommended `0.00`). This isn't a coding mistake so much as the metric
+  definition making the "budget" never bind; spec's own line ("make the tradeoff explicit... rather than
+  picking a threshold silently") means the report has to say so rather than print one number that looks
+  authoritative. Fixed by adding `best_threshold_for_accuracy()` (verdict accuracy is *not* monotone in
+  threshold, since it reflects the decision layer's authorization checks too) and an explicit note in
+  `format_calibration_report()`. Also fixed two test files that relied on the ambient cwd being the repo
+  root (`monkeypatch.chdir` / `Path(__file__).parent.parent`, matching the existing `test_corpus_eval.py`
+  pattern) and one contradictory STATUS.md sentence. **V1 coding complete: 159 tests passing.**

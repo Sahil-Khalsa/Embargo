@@ -1,0 +1,67 @@
+- fact_id: FA01
+  summary: "Acme is being acquired by Beta Corp"
+  entities: ["Acme"]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high
+
+- fact_id: FA02
+  summary: "Delta Corp is entering Chapter 11 restructuring"
+  entities: ["Delta"]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high
+
+# Entity name deliberately collides with a common English word.
+- fact_id: FA03
+  summary: "Current Inc. is restructuring its board"
+  entities: ["Current"]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high
+
+# Alias is also an innocent, unrelated internal document name.
+- fact_id: FA04
+  summary: "Omni Corp's confidential merger codename is 'Blue Horizon'"
+  entities: ["Omni"]
+  aliases: ["Blue Horizon"]
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high
+
+- fact_id: FA05
+  summary: "Gamma Corp merger with Zeta Corp is proceeding"
+  entities: ["Gamma", "Zeta"]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high
+
+- fact_id: FA06
+  summary: "Sigma Corp acquisition closes Friday"
+  entities: ["Sigma"]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-01T00:00:00"
+  materiality:
+    - effective_from: "2026-01-01T00:00:00"
+      level: high

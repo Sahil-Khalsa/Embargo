@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -101,9 +102,51 @@ def build_resolver_failure_trace(
     })
 
 
+def _raw_lines(path: Path) -> list[str]:
+    # newline="" disables universal-newline translation on both read and
+    # write, so the bytes we hash are exactly the bytes on disk regardless
+    # of platform -- an autocrlf checkout must not flip \n to \r\n under us.
+    if not path.exists():
+        return []
+    with open(path, "r", newline="") as f:
+        content = f.read()
+    return [line for line in content.split("\n") if line]
+
+
 def write_trace(path: str | Path, record: dict) -> None:
-    with open(path, "a") as f:
-        f.write(json.dumps(record) + "\n")
+    path = Path(path)
+    lines = _raw_lines(path)
+    prev_line = lines[-1] if lines else None
+    record = dict(record)
+    record["prev_hash"] = (
+        hashlib.sha256(prev_line.encode("utf-8")).hexdigest() if prev_line is not None else None
+    )
+    line = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    with open(path, "a", newline="") as f:
+        f.write(line + "\n")
+
+
+@dataclass
+class ChainVerification:
+    ok: bool
+    broken_at_line: int | None
+
+
+def verify_chain(path: str | Path) -> ChainVerification:
+    """Walks the hash chain and reports the first break (spec 13.4):
+    the first record whose stored prev_hash does not match the SHA-256 of
+    the raw line immediately before it."""
+    lines = _raw_lines(Path(path))
+    prev_line = None
+    for i, line in enumerate(lines, start=1):
+        record = json.loads(line)
+        expected_prev_hash = (
+            hashlib.sha256(prev_line.encode("utf-8")).hexdigest() if prev_line is not None else None
+        )
+        if record.get("prev_hash") != expected_prev_hash:
+            return ChainVerification(ok=False, broken_at_line=i)
+        prev_line = line
+    return ChainVerification(ok=True, broken_at_line=None)
 
 
 def read_traces(path: str | Path, message_id: str | None = None) -> list[dict]:
