@@ -65,7 +65,16 @@ first module built; everything else in the module list is still to do.
       JSONL append/read; `read_traces(path, message_id=...)` returns **every** record for that id, in write
       order — needed because the V0 demo screens one message three ways. TDD'd in `tests/test_trace.py`
       (10 tests, all passing).
-- [ ] `embargo/cli.py` — `screen`, `ledger`, `cross`, `eval`, `trace` subcommands
+- [x] `embargo/cli.py` — `screen_message()` is the testable pipeline core (prefilter → resolver → decide →
+      trace record, resolver-failure path included) used by both `embargo screen` and its own unit tests
+      (via a raising stub resolver, keeping "other tests use FakeResolver" honest for the default path).
+      argparse wiring for all five spec §6 subcommands (`ledger add/list/show/transition`, `cross add/list`,
+      `screen`, `eval`, `trace show`). `screen` builds the effective message via `dataclasses.replace`
+      (overridden timestamp/recipients) and passes overrides through to the trace. `trace show` prints every
+      record for a message id (not just the latest). `eval` delegates to `eval/run_eval.py`. TDD'd in
+      `tests/test_cli_screen.py` (5 tests) and `tests/test_cli_main.py` (6 tests, including a direct
+      end-to-end proof of acceptance criterion 1: one message, three `--as-of`/`--recipients` combinations,
+      three different correct verdicts) — 11 tests, all passing.
 
 ### Corpus & eval (spec §8)
 - [ ] `corpus/facts.yaml`, `corpus/crossings.yaml`, `corpus/messages.yaml` (30–40 messages)
@@ -111,3 +120,9 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   computed) + message-level severity via Verdict ordering.
 - 2026-09-18 — `embargo/trace.py` built via TDD: `build_trace()`/`build_resolver_failure_trace()` +
   JSONL `write_trace()`/`read_traces()`.
+- 2026-09-18 — `embargo/cli.py` built via TDD: `screen_message()` core + all five argparse subcommands.
+  Acceptance criterion 1 directly proven by `test_screen_same_message_three_ways_yields_three_different_verdicts`.
+- 2026-09-18 — `git push` started hanging on a credential-manager prompt (network to GitHub itself is fine —
+  `curl` succeeds; `GIT_TERMINAL_PROMPT=0` push fails with "terminal prompts disabled", confirming the
+  credential helper needs interactive re-auth). Continuing to build/commit locally; push needs the user to
+  re-authenticate in an interactive terminal.
