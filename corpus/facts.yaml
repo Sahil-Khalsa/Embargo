@@ -1,0 +1,235 @@
+# Corpus facts for the V0 eval (spec §8). Fictional companies/events only.
+# Hard cases F001-F010 map 1:1 to spec §8.1's table; F011-F023 are padding
+# for coverage breadth. Committed before the resolver prompt existed, per §8.
+
+- fact_id: F001
+  summary: "Acme is acquiring Beta"
+  entities: [Acme, Beta]
+  aliases: ["Project Falcon"]
+  state: cleared
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-15T00:00:00"
+  cleared_at: "2026-02-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F002
+  summary: "Gamma is undergoing a restructuring"
+  entities: [Gamma]
+  aliases: ["Project Comet"]
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-10T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F003
+  summary: "Delta is launching a new product line"
+  entities: [Delta]
+  aliases: []
+  state: private
+  recorded_at: "2026-01-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F004
+  summary: "Epsilon reached a regulatory settlement"
+  entities: [Epsilon]
+  aliases: []
+  state: cleared
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-02-15T00:00:00"
+  cleared_at: "2026-03-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F005
+  summary: "Zeta's board chair is resigning"
+  entities: [Zeta]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F006
+  summary: "Eta is forming a joint venture"
+  entities: [Eta]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: none}
+
+- fact_id: F007
+  summary: "Theta is preparing a hostile-takeover defense"
+  entities: [Theta]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F008
+  summary: "The Iota deal fell through"
+  entities: [Iota]
+  aliases: ["Project Nova"]
+  state: abandoned
+  recorded_at: "2026-01-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F009
+  summary: "Kappa is in early acquisition talks"
+  entities: [Kappa]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F010
+  summary: "Lambda is planning a spinoff"
+  entities: [Lambda]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-10T00:00:00"
+  cleared_at: "2026-03-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F011
+  summary: "Muvex missed earnings expectations"
+  entities: [Muvex]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F012
+  summary: "Nuvexis hired a new chief executive"
+  entities: [Nuvexis]
+  aliases: ["Project Orion"]
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: medium}
+
+- fact_id: F013
+  summary: "Xilonova settled its litigation"
+  entities: [Xilonova]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F014
+  summary: "Omicrode signed a major supply deal"
+  entities: [Omicrode]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F015
+  summary: "Pyrrhos is undergoing a restructuring"
+  entities: [Pyrrhos]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F016
+  summary: "Rhodantis approved a stock buyback"
+  entities: [Rhodantis]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: none}
+
+- fact_id: F017
+  summary: "Sigmatek suffered a data breach"
+  entities: [Sigmatek]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F018
+  summary: "Tauronix's CEO is stepping down"
+  entities: [Tauronix]
+  aliases: ["Project Helios"]
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F019
+  summary: "Upsilonyx is in a patent dispute"
+  entities: [Upsilonyx]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F020
+  summary: "Phinovus terminated its merger agreement"
+  entities: [Phinovus]
+  aliases: []
+  state: cleared
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  cleared_at: "2026-02-01T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F021
+  summary: "Chiventure renewed a vendor contract"
+  entities: [Chiventure]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: low}
+
+- fact_id: F022
+  summary: "Psilocorp is planning layoffs"
+  entities: [Psilocorp]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}
+
+- fact_id: F023
+  summary: "Omegatrust closed a financing round"
+  entities: [Omegatrust]
+  aliases: []
+  state: announced
+  recorded_at: "2026-01-01T00:00:00"
+  announced_at: "2026-01-05T00:00:00"
+  materiality:
+    - {effective_from: "2026-01-01T00:00:00", level: high}

@@ -1,0 +1,274 @@
+# V0 eval corpus messages (spec §8). M001-M010 are the nine required hard
+# cases from §8.1 (M004/M005 together are the "before and after cleared_at"
+# case). M011-M023 are padding for coverage breadth across verdict/state
+# combinations. M024-M030 are additional variety and contrast cases.
+# expected_fact_ids is the ground truth of facts truly CONVEYED (not merely
+# mentioned) — used for resolver precision/recall, independent of the
+# ledger-driven expected_verdict.
+
+# --- hard cases (spec §8.1) --------------------------------------------------
+
+- message_id: M001
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Just a heads up, the Acme news is now public — should be a smooth transition."
+  expected_verdict: clean
+  expected_fact_ids: [F001]
+  # Public info about a name still on a restricted list -> clean (nobody is
+  # crossed on F001 at all; it's clean purely because cleared_at has passed).
+
+- message_id: M002
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Following up on the thing we discussed last week about the restructuring situation — still moving forward."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F002]
+  # Fact referenced via euphemism, no entity named -> candidate reaches the
+  # resolver only via alice's wall-crossing (prefilter set 2), not a keyword hit.
+
+- message_id: M003
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Congrats to the whole Delta team on the big product launch celebration!"
+  expected_verdict: clean
+  expected_fact_ids: []
+  # Chatty message naming a restricted entity, disclosing nothing -> clean via mentions.
+
+- message_id: M004
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-02-01T00:00:00"
+  body: "The Epsilon settlement details are still confidential, keep this between us."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F004]
+  # Same fact referenced before cleared_at -> violation.
+
+- message_id: M005
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-04-01T00:00:00"
+  body: "The Epsilon settlement details are now old news."
+  expected_verdict: clean
+  expected_fact_ids: [F004]
+  # ...and after cleared_at -> clean. Same fact, same parties, different timestamp.
+
+- message_id: M006
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Wanted to give you an early look at the Zeta board situation before it's official."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F005]
+  # Recipient wall-crossed only from 2026-06-15, after this message -> violation.
+
+- message_id: M007
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Wanted to loop you in on both the Eta joint venture and the Theta situation — let me know your thoughts."
+  expected_verdict: violation_upstream_leak
+  expected_fact_ids: [F006, F007]
+  # One message, two facts in different states: Eta is immaterial (clean),
+  # Theta's sender is unauthorized (violation_upstream_leak) -> most severe wins.
+
+- message_id: M008
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Still can't believe how close the Iota deal came before it fell apart."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F008]
+  # Abandoned deal referenced after it fell through -> violation (recipient uncrossed).
+
+- message_id: M009
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Heads up on the Kappa talks — very early stage but promising."
+  expected_verdict: violation_upstream_leak
+  expected_fact_ids: [F009]
+  # Sender not wall-crossed -> violation_upstream_leak, regardless of recipient status.
+
+- message_id: M010
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-02-01T00:00:00"
+  body: "The Lambda spinoff is public knowledge now but we're still finalizing internal details."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F010]
+  # Conveyed after announced_at but before cleared_at -> violation (recipient uncrossed).
+
+# --- padding: one message per remaining fact --------------------------------
+
+- message_id: M011
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Muvex's earnings miss is going to sting this quarter."
+  expected_verdict: clean
+  expected_fact_ids: [F011]
+
+- message_id: M012
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Any update on Project Orion? Curious how the search wrapped up."
+  expected_verdict: clean
+  expected_fact_ids: [F012]
+
+- message_id: M013
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "The Xilonova litigation is finally wrapping up, keep this quiet for now."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F013]
+
+- message_id: M014
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "The Omicrode supply deal is bigger than people realize."
+  expected_verdict: violation_upstream_leak
+  expected_fact_ids: [F014]
+
+- message_id: M015
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Not sure if this is even real, but might be something to the Pyrrhos restructuring chatter."
+  expected_verdict: review
+  expected_fact_ids: [F015]
+  # Low-confidence conveys resolution -> review, without ever consulting ledger state.
+
+- message_id: M016
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Rhodantis approved the buyback, should be a non-event for the stock."
+  expected_verdict: clean
+  expected_fact_ids: [F016]
+
+- message_id: M017
+  sender: alice
+  recipients: [bob, carol]
+  timestamp: "2026-06-01T00:00:00"
+  body: "The Sigmatek breach is worse than the press release let on."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F017]
+
+- message_id: M018
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Project Helios is happening sooner than expected — big change coming."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F018]
+
+- message_id: M019
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "The Upsilonyx patent dispute is heating up, but we're well positioned."
+  expected_verdict: clean
+  expected_fact_ids: [F019]
+
+- message_id: M020
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Phinovus walking away from the merger was the right call, in hindsight."
+  expected_verdict: clean
+  expected_fact_ids: [F020]
+
+- message_id: M021
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Chiventure renewed the vendor contract, nothing dramatic there."
+  expected_verdict: clean
+  expected_fact_ids: [F021]
+
+- message_id: M022
+  sender: alice
+  recipients: [bob, carol, dave]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Psilocorp is planning layoffs next month, this needs to stay internal."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F022]
+
+- message_id: M023
+  sender: alice
+  recipients: [bob, carol]
+  timestamp: "2026-06-01T00:00:00"
+  body: "The Omegatrust financing round closed higher than expected."
+  expected_verdict: violation_upstream_leak
+  expected_fact_ids: [F023]
+
+# --- additional variety / contrast cases ------------------------------------
+
+- message_id: M024
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Just checking in about lunch plans for Friday, no rush."
+  expected_verdict: clean
+  expected_fact_ids: []
+  # No candidate facts at all.
+
+- message_id: M025
+  sender: carol
+  recipients: [dave]
+  timestamp: "2026-04-01T00:00:00"
+  body: "The Acme deal closing was all over the news this morning."
+  expected_verdict: clean
+  expected_fact_ids: [F001]
+  # F001, different parties, well after cleared_at -> still clean.
+
+- message_id: M026
+  sender: carol
+  recipients: [dave]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Heads up on the Kappa talks — very early stage but promising."
+  expected_verdict: clean
+  expected_fact_ids: [F009]
+  # Contrast with M009: here both sender and recipient are authorized.
+
+- message_id: M027
+  sender: alice
+  recipients: [carol]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Wanted to give you an early look at the Zeta board situation before it's official."
+  expected_verdict: clean
+  expected_fact_ids: [F005]
+  # Contrast with M006: carol was crossed well before this message.
+
+- message_id: M028
+  sender: carol
+  recipients: [dave]
+  timestamp: "2026-12-01T00:00:00"
+  body: "The Epsilon settlement is ancient history at this point."
+  expected_verdict: clean
+  expected_fact_ids: [F004]
+  # Third F004 message, different parties, long after cleared_at -> still clean.
+
+- message_id: M029
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Two things: Muvex's earnings miss, and separately the Xilonova litigation news."
+  expected_verdict: violation_disclosure
+  expected_fact_ids: [F011, F013]
+  # F011 is clean (fully authorized), F013 is violation_disclosure -> most severe wins.
+
+- message_id: M030
+  sender: alice
+  recipients: [bob]
+  timestamp: "2026-06-01T00:00:00"
+  body: "Happy work anniversary to everyone on the Acme team!"
+  expected_verdict: clean
+  expected_fact_ids: []
+  # Names a restricted entity but discloses nothing -> clean via mentions.

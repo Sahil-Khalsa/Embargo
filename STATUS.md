@@ -5,10 +5,11 @@ this file, not memory or chat history, is the record of where the build stands.
 
 Last updated: 2026-09-18
 
-## Current tier: V0 (in progress)
+## Current tier: V0 — COMPLETE, all five acceptance criteria verified
 
-Repo has a git history now (pushed to https://github.com/Sahil-Khalsa/Embargo). `embargo/models.py` is the
-first module built; everything else in the module list is still to do.
+Repo has a git history (https://github.com/Sahil-Khalsa/Embargo, though the latest commits are currently
+stuck locally — see the push note in the log below). Every module, the corpus, and the eval harness are
+built and passing. V1 has not been started; do not pull any V1/V2 feature forward without discussing it.
 
 ## V0 — must land before V1 starts (spec §9)
 
@@ -77,18 +78,54 @@ first module built; everything else in the module list is still to do.
       three different correct verdicts) — 11 tests, all passing.
 
 ### Corpus & eval (spec §8)
-- [ ] `corpus/facts.yaml`, `corpus/crossings.yaml`, `corpus/messages.yaml` (30–40 messages)
-- [ ] Corpus committed *before* the resolver prompt is written
-- [ ] `eval/run_eval.py` + `eval/fixtures/`
-- [ ] All 9 required hard cases (§8.1) present in the corpus
-- [ ] Resolver precision/recall and end-to-end verdict accuracy reported separately
+- [x] `corpus/facts.yaml` (23 facts), `corpus/crossings.yaml`, `corpus/messages.yaml` (30 messages).
+      All fictional companies (Acme, Beta, Gamma, ... plus distinctive coined names like Muvex/Sigmatek for
+      padding, chosen specifically to avoid word-boundary keyword collisions with each other or common
+      English words). M001–M010 are the nine required hard cases (M004/M005 are the two halves of the
+      before/after-`cleared_at` case); M011–M023 are one padding message per remaining fact; M024–M030 add
+      contrast cases (no-candidate message, same fact/different parties, sender-authorized contrast, two
+      facts in one message, mentions-only).
+- [x] Corpus deviates from the letter of "commit corpus before writing the resolver prompt" — `resolver.py`
+      was already built (spec §7's prompt has no corpus to overfit to, since none existed yet). Noted here
+      per spec's own instruction to flag the deviation; the resolver prompt must not be edited now that the
+      corpus exists, which preserves the rule's actual purpose.
+- [x] `eval/run_eval.py` — YAML/JSON loaders, `run_eval()` computing both metric families, `format_report()`,
+      standalone-runnable (`python -m eval.run_eval`). `eval/fixtures/resolutions.json` holds hand-authored
+      "correct" resolutions for all 30 messages (spans verified as exact substrings of each body — required
+      by spec §3.4). TDD'd against a small synthetic 4-message corpus in `tests/test_run_eval.py` (isolates
+      one case each of true-positive, conveys/mentions confusion, false-positive, and total-miss, with the
+      expected precision/recall/confusion-matrix values hand-computed and checked) — 4 tests, all passing.
+- [x] All 9 required hard cases (§8.1) present, and individually verified (not just via aggregate accuracy)
+      in `tests/test_corpus_eval.py` — 10 case-specific tests (one per hard case, 2 for the before/after-clear
+      case) plus 4 corpus-health tests (≥30 messages, all four verdicts represented, perfect resolver
+      metrics, perfect end-to-end accuracy on this corpus) — 14 tests, all passing.
+- [x] Resolver precision/recall (with conveys/mentions confusion as its own count) and end-to-end verdict
+      accuracy (with a full 4×4 confusion matrix) are reported as two separate metric families — see
+      `EvalReport`/`format_report()` in `eval/run_eval.py`. Running `python -m eval.run_eval` against the
+      real corpus currently reports 1.000 on every metric.
 
-### Acceptance criteria (spec §9) — all five required
-- [ ] 1. Same message, three `--as-of`/`--recipients` combos → three different correct verdicts
-- [ ] 2. All nine hard cases (§8.1) pass
-- [ ] 3. `decision.py` has full unit test coverage, no model in the loop
-- [ ] 4. Every screened message produces a trace that reconstructs its decision
-- [ ] 5. Eval runs from fixtures with no network access
+### Acceptance criteria (spec §9) — all five verified
+- [x] 1. Same message, three `--as-of`/`--recipients` combos → three different correct verdicts. Proven
+      directly by `tests/test_cli_main.py::test_screen_same_message_three_ways_yields_three_different_verdicts`
+      (violation_upstream_leak, clean, violation_disclosure from one message + one fact, varying only ledger/
+      access state via the CLI overrides — the advisor's flagged "clean by vacuum" trap was checked and
+      avoided: at every `--as-of`, the message actually reaches the resolver, either the sender or a
+      recipient is genuinely crossed).
+- [x] 2. All nine hard cases (§8.1) pass — verified individually in `tests/test_corpus_eval.py`, not just via
+      an aggregate accuracy number.
+- [x] 3. `decision.py` has full unit test coverage, no model in the loop — confirmed with
+      `pytest tests/test_decision.py --cov=embargo.decision`: **100% line coverage**, 12 tests, none of which
+      touch `resolver.py` or any model.
+- [x] 4. Every screened message produces a trace that reconstructs its decision — `screen_message()` always
+      returns a trace record (both the normal and resolver-failure paths), `cmd_screen` always calls
+      `write_trace()`, and `trace show` prints every recorded screening. Covered in `tests/test_trace.py` and
+      `tests/test_cli_main.py`.
+- [x] 5. The eval runs from fixtures with no network access — confirmed by grep: no networking library
+      (`requests`/`urllib`/`http.client`/`socket`) appears anywhere in `embargo/` or `eval/`, and
+      `ModelResolver` is never referenced by `eval/run_eval.py` or `embargo/cli.py` — only `FakeResolver` is
+      wired into the eval and screen paths in V0.
+
+**Full suite: 104 tests, all passing** (`python -m pytest -q`).
 
 ## V1 — blocked on V0 (spec §13)
 Not started. Criteria: spec §13.6.
@@ -101,6 +138,19 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
 - Materiality assessment: how much can be model-assisted
 - Digestion window: fixed policy vs. per-event
 - Number of materiality levels and who may change them post-intake
+
+## Known follow-up (not spec-mandated, noted rather than fixed to avoid V0 scope creep)
+- If a resolver ever returns a `fact_id` that wasn't among the candidates it was given (a hallucination,
+  for a real model backend), `decide()` will raise `KeyError` rather than rejecting it gracefully the way
+  `resolver.py` already rejects a non-verbatim `span`. Every hand-authored fixture in this corpus only
+  returns fact ids that are genuine candidates, so this never triggers in V0. Worth a
+  reject-and-log guard in `resolver.py` (same layer, same pattern as span validation) before `ModelResolver`
+  is ever pointed at a real model in V2.
+
+## Dependencies
+- `PyYAML` (see `requirements.txt`) — needed for `corpus/*.yaml` per spec §5's module layout; confirmed
+  available and used deliberately (not framework bloat, spec's own file layout requires a YAML parser).
+  Not yet formalized into `pyproject.toml` since that's explicitly a V2 packaging concern (§14.1).
 
 ## Log
 - 2026-09-18 — Repo initialized: `EMBARGO_SPEC.md` (pre-existing), `CLAUDE.md`, `STATUS.md` added.
@@ -126,3 +176,12 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   `curl` succeeds; `GIT_TERMINAL_PROMPT=0` push fails with "terminal prompts disabled", confirming the
   credential helper needs interactive re-auth). Continuing to build/commit locally; push needs the user to
   re-authenticate in an interactive terminal.
+- 2026-09-18 — `eval/run_eval.py` built via TDD against a synthetic 4-message corpus (4 tests) isolating one
+  case each of TP/confusion/FP/miss with hand-computed expected metrics.
+- 2026-09-18 — Corpus built: 23 facts, 30 messages (9 hard cases = 10 messages, 13 one-per-fact padding
+  messages, 7 contrast/variety messages), fixtures for all 30. `python -m eval.run_eval` against the real
+  corpus: 1.000 precision/recall/accuracy on the first run after fixing corpus construction.
+- 2026-09-18 — All five V0 acceptance criteria (§9) explicitly verified: criterion 1 by a dedicated CLI test,
+  criterion 2 by 10 individual hard-case tests, criterion 3 by `--cov=embargo.decision` showing 100%,
+  criterion 4 by trace tests, criterion 5 by grepping for networking libraries and `ModelResolver` references
+  (none found in the eval/screen path). **V0 is complete: 104 tests passing.**

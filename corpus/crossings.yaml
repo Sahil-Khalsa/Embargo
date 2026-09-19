@@ -1,0 +1,70 @@
+# Wall-crossing records for the V0 eval corpus. Party ids are fictional
+# (alice/bob/carol/dave). Facts with no entries here (F001, F003, F006,
+# F007, F016, F020) are deliberately left uncrossed by anyone — those
+# cases prove their verdict comes from fact state/materiality, not access.
+
+# F002 — euphemism case: sender crossed, recipient is not.
+- {party_id: alice, fact_id: F002, effective_from: "2026-01-01T00:00:00"}
+
+# F004 — before/after cleared_at case: sender always crossed, recipient never.
+- {party_id: alice, fact_id: F004, effective_from: "2026-01-01T00:00:00"}
+
+# F005 — recipient wall-crossed after the message was sent; carol crossed
+# beforehand for the padding message M027.
+- {party_id: alice, fact_id: F005, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F005, effective_from: "2026-06-15T00:00:00"}
+- {party_id: carol, fact_id: F005, effective_from: "2026-01-01T00:00:00"}
+
+# F008 — abandoned deal: sender crossed, recipient is not.
+- {party_id: alice, fact_id: F008, effective_from: "2026-01-01T00:00:00"}
+
+# F009 — sender not crossed (case 8); carol/dave crossed for padding M026
+# where the sender IS authorized, for contrast.
+- {party_id: bob, fact_id: F009, effective_from: "2026-01-01T00:00:00"}
+- {party_id: carol, fact_id: F009, effective_from: "2026-01-01T00:00:00"}
+- {party_id: dave, fact_id: F009, effective_from: "2026-01-01T00:00:00"}
+
+# F010 — digestion window: sender crossed, recipient is not.
+- {party_id: alice, fact_id: F010, effective_from: "2026-01-01T00:00:00"}
+
+# F011 — fully authorized (clean).
+- {party_id: alice, fact_id: F011, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F011, effective_from: "2026-01-01T00:00:00"}
+
+# F012 — fully authorized (clean, via alias trigger).
+- {party_id: alice, fact_id: F012, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F012, effective_from: "2026-01-01T00:00:00"}
+
+# F013 — sender crossed, recipient is not.
+- {party_id: alice, fact_id: F013, effective_from: "2026-01-01T00:00:00"}
+
+# F014 — sender NOT crossed, recipient is (upstream leak still wins).
+- {party_id: bob, fact_id: F014, effective_from: "2026-01-01T00:00:00"}
+
+# F015 — fully authorized, but gated to review by low confidence.
+- {party_id: alice, fact_id: F015, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F015, effective_from: "2026-01-01T00:00:00"}
+
+# F017 — multi-recipient: sender + bob authorized, carol is not.
+- {party_id: alice, fact_id: F017, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F017, effective_from: "2026-01-01T00:00:00"}
+
+# F018 — sender crossed, recipient is not (alias-only candidate trigger).
+- {party_id: alice, fact_id: F018, effective_from: "2026-01-01T00:00:00"}
+
+# F019 — fully authorized (clean).
+- {party_id: alice, fact_id: F019, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F019, effective_from: "2026-01-01T00:00:00"}
+
+# F021 — fully authorized (clean, low materiality).
+- {party_id: alice, fact_id: F021, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F021, effective_from: "2026-01-01T00:00:00"}
+
+# F022 — multi-recipient: sender + bob + carol authorized, dave is not.
+- {party_id: alice, fact_id: F022, effective_from: "2026-01-01T00:00:00"}
+- {party_id: bob, fact_id: F022, effective_from: "2026-01-01T00:00:00"}
+- {party_id: carol, fact_id: F022, effective_from: "2026-01-01T00:00:00"}
+
+# F023 — sender NOT crossed; both recipients are (upstream leak still wins).
+- {party_id: bob, fact_id: F023, effective_from: "2026-01-01T00:00:00"}
+- {party_id: carol, fact_id: F023, effective_from: "2026-01-01T00:00:00"}
