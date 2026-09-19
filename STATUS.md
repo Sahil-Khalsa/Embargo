@@ -5,16 +5,24 @@ this file, not memory or chat history, is the record of where the build stands.
 
 Last updated: 2026-09-18
 
-## Current tier: V0 (not started)
+## Current tier: V0 (in progress)
 
-No code exists yet. Repo currently contains only `EMBARGO_SPEC.md`, `CLAUDE.md`, `STATUS.md`, and Claude
-Code project config.
+Repo has a git history now (pushed to https://github.com/Sahil-Khalsa/Embargo). `embargo/models.py` is the
+first module built; everything else in the module list is still to do.
 
 ## V0 — must land before V1 starts (spec §9)
 
 ### Modules (spec §5)
-- [ ] `embargo/models.py` — Fact, Crossing, Message, Resolution, Verdict dataclasses
-- [ ] `embargo/ledger.py` — SQLite store, state transitions, `materiality_at()`
+- [x] `embargo/models.py` — FactState, MaterialityLevel, ResolutionMode, Verdict enums (Verdict carries
+      spec §4.4 severity ordering) + Fact, Crossing, Message, Resolution dataclasses. TDD'd in
+      `tests/test_models.py` (9 tests, all passing). No state-machine or materiality-lookup logic here by
+      design — that's `ledger.py`'s job per spec §5.
+- [x] `embargo/ledger.py` — `Ledger` class (SQLite-backed, tables for facts + materiality history) with
+      `add_fact`/`get_fact`/`list_facts`, plus `transition()` enforcing exactly the four allowed paths from
+      spec §3.1 (private→announced requires `announced_at`; private→abandoned; announced→cleared requires
+      `cleared_at` AND real elapsed time ≥ it; abandoned→cleared is the unconditional manual-compliance
+      path, no elapsed-time gate). Everything else raises `ValueError`. Standalone `materiality_at(fact, at)`
+      pure function alongside it. TDD'd in `tests/test_ledger.py` (16 tests, all passing).
 - [ ] `embargo/access.py` — access graph, `authorized()`
 - [ ] `embargo/prefilter.py` — candidate selection
 - [ ] `embargo/resolver.py` — `Resolver` Protocol, `ModelResolver`, `FakeResolver`
@@ -50,3 +58,6 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
 
 ## Log
 - 2026-09-18 — Repo initialized: `EMBARGO_SPEC.md` (pre-existing), `CLAUDE.md`, `STATUS.md` added.
+- 2026-09-18 — Git repo created, pushed to https://github.com/Sahil-Khalsa/Embargo.
+- 2026-09-18 — `embargo/models.py` built via TDD: enums + Fact/Crossing/Message/Resolution dataclasses.
+- 2026-09-18 — `embargo/ledger.py` built via TDD: SQLite `Ledger`, state transitions, `materiality_at()`.
