@@ -56,6 +56,9 @@ def _resolutions_from_json(data: list[dict]) -> list[Resolution]:
 
 
 class FakeResolver:
+    backend_name = "fake"
+    model_version = "fixtures"
+
     def __init__(self, fixtures: dict[str, list[dict]]):
         self._fixtures = fixtures
 
@@ -71,8 +74,16 @@ class FakeResolver:
 
 
 class ModelResolver:
-    def __init__(self, model_call: Callable[[str], str]):
+    def __init__(
+        self,
+        model_call: Callable[[str], str],
+        *,
+        backend_name: str = "unknown",
+        model_version: str = "unknown",
+    ):
         self._model_call = model_call
+        self.backend_name = backend_name
+        self.model_version = model_version
 
     def resolve(self, message: Message, candidates: list[Fact]) -> list[Resolution]:
         prompt = self._build_prompt(message, candidates)

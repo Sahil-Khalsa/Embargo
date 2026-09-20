@@ -3,16 +3,30 @@
 Tracks what's actually built against `EMBARGO_SPEC.md`. Update this whenever a checkbox changes state —
 this file, not memory or chat history, is the record of where the build stands.
 
-Last updated: 2026-09-18
+Last updated: 2026-09-19
 
-## Current tier: V1 — all of §13.1–§13.5 coded, all five acceptance criteria verified
+## Current tier: V2 — §14.1–§14.4 all built; acceptance criteria 1, 3, 4 met, criterion 2 partial (by user decision)
 
-Repo has a git history (https://github.com/Sahil-Khalsa/Embargo, though the latest commits are currently
-stuck locally — see the push note in the log below). V0 is complete. All of V1 (§13.1–§13.5) is now coded
-and tested, per the user's explicit instruction to finish all V1 coding before the next commit/push, which
-will be done together rather than per-section as V0 and §13.1 were. Nothing has been committed since
-§13.1 landed (commit `048cfd2`) — four sections' worth of work (§13.2–§13.5) sits uncommitted in the working
-tree, staged for one combined commit+push once the user is ready.
+Repo has a git history (https://github.com/Sahil-Khalsa/Embargo). V0 and V1 are both complete and
+committed (`048cfd2` §13.1, `bff4fcf` §13.2–§13.5, both fixed up per an advisor-caught bug in the
+calibration selector before committing). **All V2 work is uncommitted** in the working tree (237 tests
+passing), waiting on an explicit go-ahead to commit. **`git push` is still unresolved** — every attempt since V0
+hangs on an interactive credential-manager prompt this session cannot answer (confirmed again with a
+15s-timeout push after the V1 commit: it timed out, same as every prior attempt). 5 commits are queued
+locally on `master`, ahead of `origin/master`. The user needs to run `git push` themselves from an
+interactive terminal to clear the credential prompt.
+
+V2 build order follows spec §10/§14 (within a tier, build in the order the sections are written):
+§14.1 Packaging → §14.2 Pluggable model backend → §14.3 Reviewer UI → §14.4 Batch/service mode.
+
+**Two V2 scope decisions made with the user before coding (not mine to decide unilaterally):**
+- V2 acceptance criterion 2 ("two different model backends run the eval, selected by config with no
+  code change") — user chose to build the config-driven backend-selection machinery only, with no
+  backend actually making a live model call (no API key, no local model server available in this
+  environment). This is a **partial** satisfaction of criterion 2, called out explicitly here and in
+  §14.2's own notes rather than quietly claimed as done.
+- §14.3's reviewer UI — user chose stdlib `http.server` over adding Flask, keeping the zero-framework
+  discipline consistent with the rest of the stack.
 
 ## V0 — must land before V1 starts (spec §9)
 
@@ -294,12 +308,192 @@ the trace file has two records for that message, the second `supersedes` the fir
 4. `embargo trace verify` detects a hand-edited record — `test_trace_chain.py`, `test_cli_trace_verify.py` (§13.4)
 5. Prefilter recall reported as its own metric — `test_prefilter_recall_metric.py` (§13.5)
 
-**Per the user's explicit instruction ("complete coding first then we will commit and push together"), none
-of §13.2–§13.5 has been committed yet.** All V1 coding is now done; next step is a single combined
-commit+push with the user, not a per-section one.
+**Per the user's explicit instruction ("complete coding first then we will commit and push together"), all
+of §13.2–§13.5 was committed together** as `bff4fcf`, after the advisor caught and this session fixed a
+real bug in `best_threshold_for_budget` (see the §13.2 entry above) — nothing was committed with a known
+defect. V1 is fully complete and committed.
 
-## V2 — blocked on V1 (spec §14)
-Not started. Criteria: spec §14.5.
+## V2 — in progress (spec §14)
+
+### §14.1 — Packaging — COMPLETE
+- [x] `embargo/migrations.py` — new module. `migrate(conn)` checks whether an already-open connection's
+      `facts` table predates `valid_from` (a real, already-documented trigger from §13.1: `CREATE TABLE IF
+      NOT EXISTS` never adds a column to an existing table) and, if so, adds it via `ALTER TABLE` and
+      backfills every existing row from `recorded_at` — the same default `Fact.__post_init__` uses for a
+      fact constructed without an explicit `valid_from`. A brand-new database has no `facts` table yet, so
+      there's nothing to migrate; `Ledger`'s own schema script creates it in the current shape. Wired into
+      `Ledger.__init__`, called before the schema script runs. **Tested against a genuinely V0-shaped
+      database** built by hand with raw `sqlite3` (not a synthetic shortcut) — proves `Ledger()` opens it
+      without crashing, backfills correctly, and is idempotent on a second open.
+- [x] `embargo/config.py` — new module. `Config` (frozen dataclass: `threshold`, `digestion_window_days`,
+      `backend`, `db_path`) + `load_config(path)` reading an optional TOML file via stdlib `tomllib`
+      (Python 3.11+, no new dependency). A missing path or missing file is not an error — falls back to
+      built-in defaults, consistent with every other optional CLI setting in this project.
+      **`digestion_window_days` is read but deliberately never auto-applied anywhere** — spec §12 flags
+      "fixed policy vs. per-event" as an open question not to be decided unilaterally; the field exists so
+      a future decision has somewhere to live, the same pattern V0 used for `recorded_at`/`ledger_version`.
+- [x] **Threshold de-duplication**: `DEFAULT_THRESHOLD` previously existed as one canonical constant in
+      `pipeline.py` but was *also* independently hardcoded as a bare `0.6` in `decision.py`, `rescreen.py`,
+      and `eval/run_eval.py` (twice). All four now import `DEFAULT_THRESHOLD` from `embargo/config.py`
+      (with `pipeline.py` re-exporting it, so `cli.py`'s existing import keeps working unchanged). This
+      was flagged by the advisor specifically: "if config and DEFAULT_THRESHOLD can disagree, the traces
+      stop being reproducible." Verified as a pure, behavior-preserving refactor — full suite unchanged
+      before/after.
+- [x] `embargo/cli.py` — new top-level `--config <path>` flag (must precede the subcommand, e.g. `embargo
+      --config embargo.toml screen ...`). `--threshold`/`--db` on every subcommand that had a fixed default
+      now default to `None`; new `_resolve_threshold()`/`_resolve_db()` helpers implement the precedence
+      explicit CLI flag > config file value > built-in default. Verified directly: configured threshold
+      changes a screening's verdict when no `--threshold` flag is given, an explicit `--threshold` flag
+      overrides the config value, and a configured `db_path` is used when no `--db` flag is given.
+- [x] **Real bug found and fixed via manually running the README demo, not just writing tests for it**:
+      `ledger add`'s auto-rescreen step (§13.1) unconditionally called `FakeResolver.from_file(args.fixtures)`
+      even when no trace file existed yet to rescreen anything from — crashing a brand-new `ledger add` in
+      any fresh directory with `FileNotFoundError` on the *default* fixtures path. Every existing test
+      happened to run from the repo root, where that default path genuinely exists, so nothing caught this
+      until the demo was run from a truly clean directory. Fixed by skipping the rescreen machinery
+      entirely (not merely treating it as a no-op) when `Path(args.trace_file).exists()` is false. Regression
+      test added in `tests/test_cli_ledger_add_clean_dir.py`, using `monkeypatch.chdir` to a genuinely empty
+      `tmp_path` rather than relying on the repo's own fixture files being present.
+- [x] `pyproject.toml` — `embargo-screen` distribution name, `embargo` import package and console command
+      (`embargo.cli:main`), `requires-python = ">=3.11"`, single dependency `PyYAML`.
+- [x] `README.md` — setup (pip install), the full V0 demo (§9's three-verdicts-one-message scenario,
+      reproduced as copy-pasteable commands), `embargo eval`/`--adversarial`/`calibrate` pointers, the new
+      config file format, and spec §11's known limitations **verbatim**.
+- [x] **Acceptance criterion 1 verified for real, not just asserted**: built a genuinely clean venv
+      (`python -m venv`, no dev dependencies), ran `pip install -e .` into it, then ran the README's demo
+      commands *verbatim* end to end (`ledger add` → `transition` → three `cross add` → three `screen`
+      calls at different `--as-of`/`--recipients` → `trace show`/`trace verify`) with no modification. Got
+      exactly the three documented verdicts (`violation_upstream_leak`, `clean`, `violation_disclosure`)
+      and a `chain intact` trace verification. This is also what caught the `ledger add` bug above — it
+      would not have been caught by any existing test, all of which run from the repo root.
+
+**V2 full suite so far: 173 tests, all passing.**
+
+### §14.2 — Pluggable model backend — COMPLETE (selection machinery; no live call, by user decision)
+- [x] `ModelResolver` gained `backend_name`/`model_version` constructor kwargs (default `"unknown"`),
+      stored as plain public attributes — not part of the `Resolver` Protocol's formal shape (spec §7:
+      "MUST NOT change its shape"), just duck-typed extras concrete resolvers happen to carry.
+      `FakeResolver` gained matching class attributes (`backend_name = "fake"`, `model_version =
+      "fixtures"`).
+- [x] `embargo/trace.py` — `build_trace()`/`build_resolver_failure_trace()` gained `backend`/
+      `model_version` fields (default `"unknown"`), included in every trace record.
+- [x] `embargo/pipeline.py` — `screen_message()` derives `backend`/`model_version` from the resolver it's
+      given via `getattr(resolver, "backend_name"/"model_version", "unknown")` and threads them into the
+      trace. **No new parameters needed on `screen_message()` itself** — every caller (`cli.py`,
+      `rescreen.py`) already passes a `resolver` instance, so this needed zero changes at any call site.
+- [x] `embargo/backends.py` — new module. `BACKEND_FACTORIES = {"fake": ..., "hosted": ..., "self_hosted":
+      ...}` + `build_resolver(config, fixtures_path) -> Resolver`. `"fake"` returns a genuinely working
+      `FakeResolver`. `"hosted"`/`"self_hosted"` return a correctly-labeled `ModelResolver` whose
+      `model_call` raises `NotImplementedError` naming exactly why (no API key / local model server in
+      this environment) the moment it's actually invoked — selectable and structurally correct, never
+      silently fabricating a resolution. An unknown backend name raises `ValueError` naming the bad value
+      and the valid choices.
+- [x] `embargo/cli.py` — every place that used to hardcode `FakeResolver.from_file(args.fixtures)`
+      (`cmd_ledger_add`'s auto-rescreen, `cmd_screen`, `cmd_rescreen`) now calls
+      `build_resolver(args.config_obj, fixtures_path=args.fixtures)` instead. Selecting `backend =
+      "hosted"` in a config file changes what these commands do with **zero code change** — exactly
+      criterion 2's wording — even though "what they do" is currently "raise `NotImplementedError`
+      loudly," which is the honest, correct behavior given no real backend is wired up.
+- [x] `eval/run_eval.py` / `eval/calibrate.py` — `run_eval()`/`sweep_thresholds()` gained an optional
+      `resolver=None` parameter; when given, it's used instead of internally building `FakeResolver` from
+      `fixtures_path`. `cmd_eval`/`cmd_calibrate` now pass `build_resolver(args.config_obj, ...)` through.
+      This is what makes criterion 2's literal wording — "two different model backends **run the eval**" —
+      actually true of `embargo eval`, not just `embargo screen`.
+- [x] **Acceptance criterion 2 verified directly, end to end, and honestly**: a CLI test runs `embargo
+      --config fake.toml eval` (succeeds, `messages evaluated: 30`) and `embargo --config hosted.toml eval`
+      (same command, same code, only the config file differs) and asserts it raises `NotImplementedError`
+      — proving the selection is real and config-driven while being explicit that criterion 2 is only
+      **partially** satisfied here, per the user's explicit choice recorded above: no live network/local
+      model call exists in this build.
+
+**V2 full suite so far: 191 tests, all passing.**
+
+### §14.3 — Reviewer UI — COMPLETE
+- [x] **Record shape decided before any UI code** (advisor's point: the integration is the risk, not the
+      HTML). The trace file now holds two record types discriminated by `record_type`: `screening` (every
+      `build_trace`/`build_resolver_failure_trace` record now carries it) and `reviewer_action`
+      (`trace.build_reviewer_action`: `message_id`, `trace_id_referenced`, `action` in
+      confirm/dismiss/escalate, `reviewer`, `at`, `reason`; invalid actions raise). A reviewer action goes
+      through the same `write_trace`, so it gets a `prev_hash` and is covered by the hash chain — it
+      appends, and `verify_chain` still passes afterward. A record with no `record_type` is an old
+      screening, for backward compatibility.
+- [x] **Reproduced-then-fixed crash**: `rescreen.current_traces()` indexed `ledger_version`/`timestamp`
+      on every record, so one reviewer action in the file made the next `embargo rescreen` `KeyError`.
+      It now filters to screenings first. Same class of bug found and fixed later in `cmd_trace_show`
+      (see below).
+- [x] `embargo/reviewer.py` — HTTP-free business logic: `build_queue` (current, non-superseded, non-clean
+      screenings, most severe first, deterministic tie-break by `trace_id`, using `Verdict`'s own
+      ordering), `get_finding`, `build_evidence_chain`, `record_reviewer_action`. Authorization is
+      surfaced from the per-fact checks already stored in the trace rather than recomputed, so the page
+      shows what the decision layer actually saw.
+- [x] `embargo/reviewer_server.py` — stdlib `http.server` (user decision), real requests tested against a
+      real server on an OS-assigned port. The finding page renders: the message body with resolved spans
+      highlighted in `<mark>` (HTML-escaped; overlapping spans merged; a missing span can't crash it);
+      the resolver's backend/model_version/ledger_version; what surfaced each candidate; per fact the
+      resolver output (mode, confidence, span, whether it passed the gate and why not) followed by every
+      deterministic check in `decision.py`'s order with inputs and result and the per-fact verdict; each
+      fact's state, timeline, and materiality series; the authorization lookup per party; prior reviewer
+      actions; and the confirm/dismiss/escalate form. The trace viewer lists every record and shows chain
+      status, with no form (read-only).
+- [x] **First version fell short of the spec and was fixed before calling this done**: the initial page
+      listed spans and facts but did not highlight the span in the body, did not show the checks with
+      their inputs/results, and the trace viewer showed only a chain status. Caught by re-reading §14.3
+      against the page; tests written first (7 red), then the rendering rewritten.
+- [x] `embargo review [--db] [--trace-file] [--host] [--port 8000]`.
+- [x] **Latent bug fixed**: `embargo trace show` indexed `record['verdict']` on every record of a
+      message, so it crashed with `KeyError` on any message a reviewer had acted on. Now shows screenings
+      and prints reviewer actions as their own lines. Test reproduces the crash first.
+
+### §14.4 — Batch and service mode — COMPLETE
+- [x] `embargo/pipeline.py::screen_and_write()` — the single place that pairs `screen_message()` with
+      `write_trace()`. `cli.py`'s old local helper is now a thin adapter over it; the HTTP endpoint calls
+      it directly. Extracted as a behavior-preserving refactor (full suite unchanged) before the endpoint
+      existed, so the endpoint was never a fourth path.
+- [x] `embargo screen --batch <file>` — screens every message in a messages file, prints a per-verdict
+      summary. `--message` and `--batch` are mutually exclusive (exactly one required; exit 2 otherwise).
+- [x] `embargo/screen_server.py` + `embargo serve` — `POST /screen` takes one message as JSON and returns
+      `{"verdict", "trace_id"}`; malformed JSON or a missing field returns 400. Uses `build_resolver` so
+      the configured backend applies here too.
+- [x] **Criterion 4 tested at both boundaries**: `--message` vs `--batch` and `--message` vs the HTTP
+      endpoint each produce records equal field by field (`prev_hash` excluded — it legitimately differs
+      between two separate files) with identical `trace_id`. A separate test proves a run with no
+      `--config` and one with an explicit `backend = "fake"` produce the same `trace_id` (advisor's check:
+      §14.2 put `backend`/`model_version` inside the hashed record).
+
+### §14.5 — V2 acceptance criteria
+1. **Installs via pip into a clean environment and runs the demo from the README alone — MET.** Built a
+   fresh venv, did a *non-editable* `pip install` from a copy of the source tree (so packaging metadata,
+   not the working tree, is what's tested), ran the README demo commands verbatim (three verdicts:
+   `violation_upstream_leak`, `clean`, `violation_disclosure`), then `screen --batch`, then real
+   `embargo review` and `embargo serve` processes driven over HTTP.
+2. **Two backends run the eval, selected by config, no code change — PARTIAL, by explicit user decision.**
+   Selection is real and tested end to end (`embargo --config fake.toml eval` succeeds; the same command
+   with `hosted.toml` raises), but only `fake` makes a working call. `hosted`/`self_hosted` raise
+   `NotImplementedError` because no API key or local model server exists in this environment. Not claimed
+   as met anywhere, including the README. To close it: implement a real `model_call` for one backend in
+   `embargo/backends.py` (the `Resolver` Protocol, trace fields, config, and eval plumbing are already in
+   place) and run `embargo eval` under it.
+3. **Reviewer UI shows the complete evidence chain and records actions to the trace chain — MET.**
+   Verified in the clean-venv run above against real processes: highlighted span, checks, fact timeline,
+   backend/model, authorization lookup all present on the page; a POSTed dismissal appeared on the page,
+   was appended as a `reviewer_action` record, and `embargo trace verify` reported `chain intact`
+   afterward; `embargo rescreen` then ran without crashing.
+4. **Batch and single-message screening produce byte-identical traces — MET** (see §14.4; also holds for
+   the HTTP endpoint).
+
+**V2 full suite: 237 tests, all passing.**
+
+### Known gaps and follow-ups (not blocking, stated so they aren't lost)
+- Criterion 2's live backend (above).
+- `hosted`/`self_hosted` report `model_version = "unconfigured"`; a real backend should report the model id.
+- The reviewer UI has no authentication and binds to `127.0.0.1` by default. It's a local tool per spec
+  ("a local web UI"); exposing it beyond localhost needs auth first. Same for `embargo serve`.
+- Reviewer actions don't yet change a finding's place in the queue (a dismissed finding still lists).
+  Spec asks only that actions be recorded to the chain, so this is deliberate scope, not an oversight.
+- Migrations cover the one real schema change so far (`valid_from`); there is no general version table.
+  The next schema change should add one rather than another ad-hoc column check.
+- **Git push is still blocked** on the interactive credential prompt; V0, V1 and now V2 work is queued
+  locally. V2 is uncommitted pending the user's go-ahead.
 
 ## Open questions (spec §12)
 Unresolved, flag to the user if implementation forces a choice — do not decide unilaterally:
@@ -390,3 +584,32 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   `format_calibration_report()`. Also fixed two test files that relied on the ambient cwd being the repo
   root (`monkeypatch.chdir` / `Path(__file__).parent.parent`, matching the existing `test_corpus_eval.py`
   pattern) and one contradictory STATUS.md sentence. **V1 coding complete: 159 tests passing.**
+- 2026-09-18 — Committed V1 §13.2–§13.5 as `bff4fcf` (no co-author trailer, per standing instruction) and
+  attempted `git push`; it hung again on the same credential-manager prompt from V0 (confirmed with a
+  15s-timeout guard: exit 124). 5 commits now queued locally, unpushed.
+- 2026-09-18 — User: "lets start with v2." Consulted advisor before coding: confirmed build order
+  (14.1→14.2→14.3→14.4) and flagged two decisions as the user's to make, not the advisor's or mine —
+  answered via AskUserQuestion (see the two bullets under "Current tier" above). Advisor also flagged the
+  push was left unresolved when the user moved on; noted to the user in one line rather than blocking on it.
+- 2026-09-18 — §14.1 built via TDD: `migrations.py` (tested against a hand-built genuinely V0-shaped
+  database), `config.py` (TOML via stdlib `tomllib`), threshold de-duplication across
+  `decision.py`/`rescreen.py`/`run_eval.py` onto `embargo.config.DEFAULT_THRESHOLD`, `--config` CLI
+  integration with explicit-flag > config > default precedence, `pyproject.toml`, `README.md`. Verified
+  acceptance criterion 1 for real: fresh venv, `pip install -e .`, ran the README demo verbatim end to end.
+  That run caught a real bug (`ledger add` crashing in a clean directory on its default `--fixtures` path
+  even with no trace file to rescreen) that no existing test had caught, because every existing test
+  happened to run from the repo root where the default fixtures file exists. Fixed with a regression test
+  using `monkeypatch.chdir` to a genuinely empty directory. **173 tests passing.**
+- 2026-09-18 — §14.2 built via TDD (`backends.py` registry, `backend`/`model_version` in every trace,
+  `eval`/`calibrate` accept a resolver). Advisor then flagged that §14.2 made criterion 4 a live risk
+  (`backend`/`model_version` feed the hashed `trace_id`) and that reviewer actions in the same trace file
+  would crash `rescreen`. Wrote the no-config vs `backend = "fake"` `trace_id` equality test first
+  (passes), then reproduced the `rescreen` `KeyError`, then fixed it via a `record_type` discriminator.
+- 2026-09-18 — §14.3 reviewer logic (`reviewer.py`) and server (`reviewer_server.py`), §14.4 batch mode,
+  `pipeline.screen_and_write` extraction, and `screen_server.py`. **222 tests, then 227.** Session
+  context was compacted here with the reviewer UI's evidence chain and `embargo serve` unfinished.
+- 2026-09-19 — Picked back up at "what is left." Finished: `trace show` crash on reviewer actions
+  (reproduced first), the reviewer UI's missing evidence-chain pieces (span highlight, per-check inputs and
+  results, fact timeline, model provenance, real trace viewer; 7 tests red first), `embargo serve`, and
+  the docs (README, CLAUDE.md, this file). Verified V2 end to end in a clean non-editable venv against real
+  `review`/`serve` processes. **237 tests passing.** Criterion 2 remains partial by user decision.

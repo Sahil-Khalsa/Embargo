@@ -35,6 +35,12 @@ def _built_trace(**overrides):
     return build_trace(MESSAGE, candidates, resolutions, decision, **overrides)
 
 
+def test_build_trace_record_type_is_screening():
+    record = _built_trace()
+
+    assert record["record_type"] == "screening"
+
+
 def test_build_trace_includes_message_fields_and_ledger_version_placeholder():
     record = _built_trace(ledger_version=0)
 
@@ -44,6 +50,20 @@ def test_build_trace_includes_message_fields_and_ledger_version_placeholder():
     assert record["timestamp"] == "2026-06-01T00:00:00"
     assert record["ledger_version"] == 0
     assert record["reason"] is None
+
+
+def test_build_trace_defaults_backend_and_model_version_to_unknown():
+    record = _built_trace()
+
+    assert record["backend"] == "unknown"
+    assert record["model_version"] == "unknown"
+
+
+def test_build_trace_records_given_backend_and_model_version():
+    record = _built_trace(backend="fake", model_version="fixtures")
+
+    assert record["backend"] == "fake"
+    assert record["model_version"] == "fixtures"
 
 
 def test_build_trace_includes_candidates_with_reasons():
@@ -123,6 +143,21 @@ def test_build_resolver_failure_trace_is_review_with_reason():
     assert record["verdict"] == "review"
     assert record["reason"] == "resolver_output_invalid"
     assert record["fact_results"] == []
+
+
+def test_build_resolver_failure_trace_record_type_is_screening():
+    candidates = candidate_facts(MESSAGE, [FACT], [])
+    record = build_resolver_failure_trace(MESSAGE, candidates)
+
+    assert record["record_type"] == "screening"
+
+
+def test_build_resolver_failure_trace_records_given_backend_and_model_version():
+    candidates = candidate_facts(MESSAGE, [FACT], [])
+    record = build_resolver_failure_trace(MESSAGE, candidates, backend="hosted", model_version="claude-x")
+
+    assert record["backend"] == "hosted"
+    assert record["model_version"] == "claude-x"
 
 
 def test_write_trace_then_read_traces_round_trips(tmp_path):

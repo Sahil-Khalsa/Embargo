@@ -80,6 +80,13 @@ def test_fake_resolver_rejects_resolution_whose_span_is_not_verbatim_in_body():
     assert resolver.resolve(_message(), [_fact()]) == []
 
 
+def test_fake_resolver_reports_fake_backend_name_and_version():
+    resolver = FakeResolver({})
+
+    assert resolver.backend_name == "fake"
+    assert resolver.model_version == "fixtures"
+
+
 def test_fake_resolver_from_file_loads_json_fixture(tmp_path):
     fixture_path = tmp_path / "fixtures.json"
     fixture_path.write_text(
@@ -171,6 +178,24 @@ def test_model_resolver_prompt_excludes_fact_state_and_timestamps():
     assert "announced" not in prompt.lower()
     assert "2026-03-14" not in prompt
     assert "2026-04-01" not in prompt
+
+
+def test_model_resolver_reports_configured_backend_name_and_model_version():
+    resolver = ModelResolver(
+        model_call=lambda prompt: _valid_response(),
+        backend_name="hosted",
+        model_version="claude-x",
+    )
+
+    assert resolver.backend_name == "hosted"
+    assert resolver.model_version == "claude-x"
+
+
+def test_model_resolver_defaults_backend_name_and_model_version_to_unknown():
+    resolver = ModelResolver(model_call=lambda prompt: _valid_response())
+
+    assert resolver.backend_name == "unknown"
+    assert resolver.model_version == "unknown"
 
 
 def test_model_resolver_prompt_includes_candidate_id_summary_entities_aliases():

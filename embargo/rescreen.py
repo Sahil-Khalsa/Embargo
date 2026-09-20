@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from embargo.config import DEFAULT_THRESHOLD
 from embargo.models import Crossing, Fact, Message
 from embargo.pipeline import screen_message
 from embargo.resolver import Resolver
@@ -9,9 +10,17 @@ from embargo.trace import read_traces, write_trace
 
 
 def current_traces(records: list[dict]) -> list[dict]:
-    """Traces not superseded by any other record in the list."""
-    superseded_ids = {r["supersedes"] for r in records if r.get("supersedes")}
-    return [r for r in records if r["trace_id"] not in superseded_ids]
+    """Screening traces not superseded by any other record in the list.
+
+    Filters out reviewer-action records (spec §14.3) first: they live in
+    the same trace file/chain but are a different record shape entirely
+    (no ledger_version, verdict, etc.) and are never something a screening
+    supersedes or is superseded by. A record with no record_type at all is
+    an old, pre-§14.3 screening -- treated as one for backward compatibility.
+    """
+    screenings = [r for r in records if r.get("record_type", "screening") == "screening"]
+    superseded_ids = {r["supersedes"] for r in screenings if r.get("supersedes")}
+    return [r for r in screenings if r["trace_id"] not in superseded_ids]
 
 
 def _message_from_trace(record: dict) -> Message:
@@ -42,7 +51,7 @@ def rescreen_stale_traces(
     max_version: int,
     current_version: int,
     timestamp_from: datetime | None = None,
-    threshold: float = 0.6,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> list[RescreenChange]:
     """Re-screens every current (non-superseded) trace recorded at
     ledger_version < max_version, against the given (current) facts/

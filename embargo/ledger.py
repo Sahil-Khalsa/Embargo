@@ -2,6 +2,7 @@ import json
 import sqlite3
 from datetime import datetime
 
+from embargo.migrations import migrate
 from embargo.models import Fact, FactState, MaterialityLevel
 
 _SCHEMA = """
@@ -66,6 +67,7 @@ def materiality_at(fact: Fact, at: datetime) -> MaterialityLevel:
 class Ledger:
     def __init__(self, path: str = ":memory:"):
         self._conn = sqlite3.connect(path)
+        migrate(self._conn)
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
         ensure_version_table(self._conn)

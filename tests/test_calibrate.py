@@ -2,6 +2,7 @@ import json
 
 import yaml
 
+from embargo.resolver import FakeResolver
 from eval.calibrate import best_threshold_for_accuracy, best_threshold_for_budget, sweep_thresholds
 
 FACTS = [
@@ -74,6 +75,20 @@ def test_sweep_at_threshold_zero_accepts_both_resolutions(tmp_path):
     assert point.resolver_recall == 1.0
     assert point.review_share == 0.0
     assert point.verdict_accuracy == 1.0
+
+
+def test_sweep_thresholds_accepts_an_explicit_resolver(tmp_path):
+    """spec §14.2 criterion 2: a different backend must be able to run the
+    calibration sweep too, not just embargo eval."""
+    facts_path, crossings_path, messages_path, fixtures_path = _write_corpus(tmp_path)
+    explicit_resolver = FakeResolver.from_file(fixtures_path)
+
+    points = sweep_thresholds(
+        facts_path, crossings_path, messages_path, fixtures_path,
+        thresholds=[0.0], resolver=explicit_resolver,
+    )
+
+    assert points[0].resolver_recall == 1.0
 
 
 def test_sweep_at_threshold_half_routes_low_confidence_to_review(tmp_path):

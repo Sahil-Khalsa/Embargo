@@ -2,6 +2,7 @@ import json
 
 import yaml
 
+from embargo.resolver import FakeResolver
 from eval.run_eval import run_eval
 
 FACTS = [
@@ -93,6 +94,18 @@ def test_run_eval_reports_resolver_precision_and_recall(tmp_path):
     # tp=1 (F1), fp=1 (F3), fn_missed=1 (F4), fn_confusion=1 (F2)
     assert report.resolver_precision == 0.5
     assert abs(report.resolver_recall - 1 / 3) < 1e-9
+
+
+def test_run_eval_accepts_an_explicit_resolver_instead_of_loading_fixtures_path(tmp_path):
+    """spec §14.2 criterion 2: two different backends must be able to 'run
+    the eval' -- run_eval must accept a pre-built Resolver (as build_resolver
+    would produce) rather than always constructing FakeResolver internally."""
+    facts_path, crossings_path, messages_path, fixtures_path = _write_corpus(tmp_path)
+    explicit_resolver = FakeResolver.from_file(fixtures_path)
+
+    report = run_eval(facts_path, crossings_path, messages_path, fixtures_path, resolver=explicit_resolver)
+
+    assert report.resolver_precision == 0.5
 
 
 def test_run_eval_reports_conveys_mentions_confusion_count(tmp_path):

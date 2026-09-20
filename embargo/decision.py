@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from embargo.access import authorized
+from embargo.config import DEFAULT_THRESHOLD
 from embargo.ledger import materiality_at
 from embargo.models import (
     Crossing,
@@ -79,7 +80,7 @@ def decide(
     facts: dict[str, Fact],
     crossings: list[Crossing],
     *,
-    threshold: float = 0.6,
+    threshold: float = DEFAULT_THRESHOLD,
 ) -> MessageDecision:
     fact_decisions = []
 

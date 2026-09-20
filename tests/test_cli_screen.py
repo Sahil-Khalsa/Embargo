@@ -90,6 +90,21 @@ def test_screen_message_records_ledger_version_and_supersedes():
     assert record["supersedes"] == "abc123"
 
 
+def test_screen_message_records_backend_and_model_version_from_resolver():
+    crossings = [
+        Crossing(party_id="alice", fact_id="F047", effective_from=datetime(2026, 1, 1)),
+        Crossing(party_id="bob", fact_id="F047", effective_from=datetime(2026, 1, 1)),
+    ]
+    resolver = FakeResolver(
+        {"M001": [{"fact_id": "F047", "mode": "conveys", "confidence": 0.9, "span": "ACME news"}]}
+    )
+
+    record, _ = screen_message(_message(), [FACT], crossings, resolver)
+
+    assert record["backend"] == "fake"
+    assert record["model_version"] == "fixtures"
+
+
 def test_screen_message_no_candidates_is_clean():
     unrelated = Message(
         message_id="M002", sender="alice", recipients=["bob"],

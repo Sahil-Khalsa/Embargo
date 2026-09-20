@@ -4,12 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## State of the repo
 
-There is no implementation yet. `EMBARGO_SPEC.md` is the complete, self-contained build brief — it is the
-source of truth for everything below. `STATUS.md` tracks what has actually been built against that spec;
-check it before assuming any module exists. When the two disagree, the spec wins for *what to build*, and
-`STATUS.md` wins for *what is already built*.
+V0, V1, and V2 are all built (V2 with one documented gap: no live model backend — see `STATUS.md` §14.2).
+`EMBARGO_SPEC.md` is the complete, self-contained build brief — it is the source of truth for what to
+build. `STATUS.md` tracks what has actually been built, with the reasoning and flagged interpretations
+behind each section; check it before assuming anything. When the two disagree, the spec wins for *what to
+build*, and `STATUS.md` wins for *what is already built*.
 
 Read `EMBARGO_SPEC.md` in full before implementing anything — this file only orients you within it.
+
+Working conventions that held throughout the build: test-first (write the test, watch it fail for the right
+reason, then implement); verify acceptance criteria directly rather than asserting them; never commit
+without an explicit ask, and no `Co-Authored-By` trailer on commits or PRs (enforced via
+`.claude/settings.json`).
 
 ## What this system is
 
@@ -20,20 +26,41 @@ and a deterministic decision layer does the rest. This split is the entire point
 blur it when implementing (e.g. don't let the resolver prompt see fact state/timestamps, don't let the
 decision layer call the model).
 
-## Commands (per spec §2, §6 — not yet functional until scaffolded)
+## Commands (per spec §2, §6, §13, §14)
 
-- Stack: Python 3.11+, stdlib `sqlite3` for storage, stdlib `argparse` for the CLI, `pytest` for tests, no
-  framework, dependencies kept minimal.
-- Tests: `pytest`. Every test except the resolver's own MUST run against `FakeResolver` — no network access
-  in the suite.
-- CLI (command name `embargo`; PyPI distribution name is `embargo-screen`, imports/command stay `embargo`):
-  - `embargo screen --message <id> [--as-of <ts>] [--recipients <a,b>]`
-  - `embargo ledger add|list|show|transition`
-  - `embargo cross add|list`
-  - `embargo eval [--fixtures]`
-  - `embargo trace show <message_id>`
-- Eval harness must support both a live model run and a fixture run (`eval/fixtures/`), and must report
-  resolver accuracy and end-to-end verdict accuracy as **separate** metrics, never collapsed into one number.
+- Stack: Python 3.11+, stdlib `sqlite3` for storage, stdlib `argparse` for the CLI, stdlib `http.server`
+  for the reviewer UI and screening endpoint, stdlib `tomllib` for config, `pytest` for tests, PyYAML for
+  the corpus files. No framework. Dependencies kept minimal.
+- Install for development: `pip install -e .`. Tests: `pytest` (run from the repo root; a few CLI tests
+  pin their own cwd). Every test except the resolver's own runs against `FakeResolver` — no network
+  access in the suite.
+- CLI (command `embargo`; PyPI distribution `embargo-screen`, imports/command stay `embargo`). A global
+  `--config <toml>` goes *before* the subcommand; precedence is explicit CLI flag > config file > default.
+  - `embargo screen --message <id> [--as-of <ts>] [--recipients <a,b>]` or `--batch <file>`
+  - `embargo ledger add|list|show|transition`, `embargo cross add|list`
+  - `embargo rescreen --since <ledger_version>` (a `ledger add` also re-screens affected traces itself)
+  - `embargo eval [--adversarial]`, `embargo calibrate [--budget <fraction>]`
+  - `embargo trace show <message_id>`, `embargo trace verify`
+  - `embargo review` (reviewer web UI, :8000), `embargo serve` (HTTP screening endpoint, :8001)
+- Eval reports resolver metrics, prefilter recall, and end-to-end verdict accuracy as **separate**
+  metrics, never collapsed into one number; the adversarial corpus is reported separately from V0's.
+
+## Invariants added after V0 (each one was a real bug or near-miss)
+
+- **One screening code path.** `pipeline.screen_and_write` is the only place that pairs `screen_message`
+  with `write_trace`; CLI `--message`, `--batch`, and the HTTP endpoint all call it. Don't add a fourth
+  path — byte-identical traces (spec §14.5) depend on there being one.
+- **The threshold has one source.** `embargo.config.DEFAULT_THRESHOLD`. Don't hardcode `0.6` anywhere.
+- **The trace file holds two record types**, discriminated by `record_type` (`screening`, `reviewer_action`;
+  a record with no `record_type` is an old screening). Any code that reads `verdict`/`ledger_version`/
+  `timestamp` must filter to screenings first (`rescreen.current_traces`, `cmd_trace_show` do).
+- **`trace_id` is a content hash** that excludes `prev_hash` (the chain link, added at write time). Anything
+  put in a record — including `backend`/`model_version` — feeds `trace_id`, so it must resolve identically
+  on every path.
+- **The `Resolver` Protocol's shape is frozen** (spec §7). `backend_name`/`model_version` are duck-typed
+  extras read with `getattr`, not Protocol members.
+- **Schema changes need a migration** in `embargo/migrations.py`; `CREATE TABLE IF NOT EXISTS` never adds
+  a column to an existing table.
 
 ## Architecture
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from embargo.config import DEFAULT_THRESHOLD
 from embargo.decision import decide
 from embargo.models import Crossing, Fact, FactState, MaterialityLevel, Message, ResolutionMode, Verdict
 from embargo.prefilter import candidate_facts
@@ -83,12 +84,19 @@ def run_eval(
     messages_path: str | Path,
     fixtures_path: str | Path,
     *,
-    threshold: float = 0.6,
+    threshold: float = DEFAULT_THRESHOLD,
+    resolver=None,
 ) -> EvalReport:
+    """`resolver`, if given, is used instead of building a FakeResolver from
+    fixtures_path -- this is what lets a different backend (spec §14.2) run
+    the eval via `embargo.backends.build_resolver()` without any code change
+    here. fixtures_path is still required as the corpus's expected-behavior
+    source when no resolver is given (the default, fixture-run path)."""
     facts = load_facts(facts_path)
     crossings = load_crossings(crossings_path)
     raw_messages = load_messages_raw(messages_path)
-    resolver = FakeResolver.from_file(fixtures_path)
+    if resolver is None:
+        resolver = FakeResolver.from_file(fixtures_path)
     facts_by_id = {fact.fact_id: fact for fact in facts}
 
     verdict_labels = [v.value for v in Verdict]
@@ -185,7 +193,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--crossings", default="corpus/crossings.yaml")
     parser.add_argument("--messages", default="corpus/messages.yaml")
     parser.add_argument("--fixtures", default="eval/fixtures/resolutions.json")
-    parser.add_argument("--threshold", type=float, default=0.6)
+    parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
     args = parser.parse_args(argv)
 
     report = run_eval(args.facts, args.crossings, args.messages, args.fixtures, threshold=args.threshold)

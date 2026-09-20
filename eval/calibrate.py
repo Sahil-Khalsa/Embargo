@@ -87,14 +87,19 @@ def sweep_thresholds(
     messages_path: str | Path,
     fixtures_path: str | Path,
     thresholds: list[float] | None = None,
+    resolver=None,
 ) -> list[CalibrationPoint]:
+    """`resolver`, if given, is used instead of building a FakeResolver from
+    fixtures_path -- lets a different backend (spec §14.2) run the
+    calibration sweep without any code change here."""
     if thresholds is None:
         thresholds = DEFAULT_THRESHOLDS
 
     facts = load_facts(facts_path)
     crossings = load_crossings(crossings_path)
     raw_messages = load_messages_raw(messages_path)
-    resolver = FakeResolver.from_file(fixtures_path)
+    if resolver is None:
+        resolver = FakeResolver.from_file(fixtures_path)
 
     return [
         _metrics_at_threshold(raw_messages, facts, crossings, resolver, threshold)

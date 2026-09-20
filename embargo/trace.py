@@ -51,8 +51,11 @@ def build_trace(
     recipients_override: list[str] | None = None,
     ledger_version: int = 0,
     supersedes: str | None = None,
+    backend: str = "unknown",
+    model_version: str = "unknown",
 ) -> dict:
     return _finalize({
+        "record_type": "screening",
         "message_id": message.message_id,
         "sender": message.sender,
         "recipients": message.recipients,
@@ -71,6 +74,8 @@ def build_trace(
         "reason": None,
         "ledger_version": ledger_version,
         "supersedes": supersedes,
+        "backend": backend,
+        "model_version": model_version,
     })
 
 
@@ -82,8 +87,11 @@ def build_resolver_failure_trace(
     recipients_override: list[str] | None = None,
     ledger_version: int = 0,
     supersedes: str | None = None,
+    backend: str = "unknown",
+    model_version: str = "unknown",
 ) -> dict:
     return _finalize({
+        "record_type": "screening",
         "message_id": message.message_id,
         "sender": message.sender,
         "recipients": message.recipients,
@@ -99,6 +107,39 @@ def build_resolver_failure_trace(
         "reason": "resolver_output_invalid",
         "ledger_version": ledger_version,
         "supersedes": supersedes,
+        "backend": backend,
+        "model_version": model_version,
+    })
+
+
+_REVIEWER_ACTIONS = {"confirm", "dismiss", "escalate"}
+
+
+def build_reviewer_action(
+    message_id: str,
+    trace_id_referenced: str,
+    action: str,
+    *,
+    reviewer: str,
+    at: datetime,
+    reason: str | None = None,
+) -> dict:
+    """A reviewer's disposition of a finding (spec §14.3). Appends to the
+    same hash-chained trace file as screenings via write_trace -- never
+    overwrites anything -- but is a distinct record shape, discriminated by
+    record_type, since it has no verdict/candidates/fact_results of its own.
+    `trace_id_referenced` points at the screening trace_id this action is
+    about."""
+    if action not in _REVIEWER_ACTIONS:
+        raise ValueError(f"invalid reviewer action {action!r}; choose one of {sorted(_REVIEWER_ACTIONS)}")
+    return _finalize({
+        "record_type": "reviewer_action",
+        "message_id": message_id,
+        "trace_id_referenced": trace_id_referenced,
+        "action": action,
+        "reviewer": reviewer,
+        "at": at.isoformat(),
+        "reason": reason,
     })
 
 
