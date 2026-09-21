@@ -13,15 +13,15 @@ message -> prefilter (deterministic) -> resolver (model) -> gate (deterministic)
 
 ## Install
 
-```
-pip install embargo-screen
-```
-
-For local development, from a clone of this repository:
+From a clone of this repository:
 
 ```
-pip install -e .
+pip install .
 ```
+
+(Or `pip install -e .` for development.) The distribution name is `embargo-screen`, but it is not
+published to PyPI, so `pip install embargo-screen` will not work yet; the import package and the
+command are both `embargo`.
 
 Requires Python 3.11+. The only runtime dependency is PyYAML (used to read the corpus/config file
 formats).
@@ -134,7 +134,10 @@ embargo review --db demo.db --trace-file traces/trace.jsonl   # http://127.0.0.1
 
 A local web UI for the people who work the queue (standard library only, no framework):
 
-- **Queue** of `review` and violation verdicts, most severe first.
+- **Queue** of `review` and violation verdicts, most severe first, each with a status (open,
+  escalated, confirmed, dismissed). Confirmed and dismissed findings leave the default view
+  (`/?all=1` shows them). A dismissal applies to that one trace, not the message: if a re-screen
+  recomputes the verdict, the new finding comes back as open.
 - **Per finding, the full evidence chain**: the message with the resolved span highlighted; what
   surfaced each candidate fact; the resolver's output (mode, confidence, span) next to its
   backend and model version; every deterministic check in the order it runs, with its inputs and

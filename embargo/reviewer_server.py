@@ -116,7 +116,7 @@ def make_handler(trace_path, db_path):
         def do_GET(self):
             parsed = urlparse(self.path)
             if parsed.path == "/":
-                self._serve_queue()
+                self._serve_queue(show_all=parse_qs(parsed.query).get("all") == ["1"])
             elif parsed.path.startswith("/finding/"):
                 self._serve_finding(parsed.path[len("/finding/"):])
             elif parsed.path == "/trace":
@@ -132,17 +132,23 @@ def make_handler(trace_path, db_path):
             else:
                 self.send_error(404)
 
-        def _serve_queue(self):
-            queue = build_queue(trace_path)
+        def _serve_queue(self, show_all: bool = False):
+            queue = build_queue(trace_path, include_resolved=show_all)
             rows = "".join(
                 f"<tr><td>{html.escape(r['verdict'])}</td><td>{html.escape(r['message_id'])}</td>"
+                f"<td>{html.escape(r['review_status'])}</td>"
                 f"<td><a href=\"/finding/{r['trace_id']}\">{r['trace_id'][:12]}</a></td></tr>"
                 for r in queue
             )
+            toggle = (
+                "<a href=\"/\">hide resolved</a>" if show_all else "<a href=\"/?all=1\">show resolved</a>"
+            )
             body = (
-                "<h1>Review queue</h1><p>Most severe first.</p>"
-                f"<table><tr><th>verdict</th><th>message</th><th>finding</th></tr>{rows}</table>"
-                "<p><a href=\"/trace\">Trace viewer</a></p>"
+                "<h1>Review queue</h1>"
+                "<p>Most severe first. Confirmed and dismissed findings are resolved; escalated "
+                f"ones stay open. ({toggle})</p>"
+                "<table><tr><th>verdict</th><th>message</th><th>status</th><th>finding</th></tr>"
+                f"{rows}</table><p><a href=\"/trace\">Trace viewer</a></p>"
             )
             self._respond(_page("Review queue", body))
 

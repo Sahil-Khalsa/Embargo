@@ -7,14 +7,10 @@ Last updated: 2026-09-19
 
 ## Current tier: V2 — §14.1–§14.4 all built; acceptance criteria 1, 3, 4 met, criterion 2 partial (by user decision)
 
-Repo has a git history (https://github.com/Sahil-Khalsa/Embargo). V0 and V1 are both complete and
-committed (`048cfd2` §13.1, `bff4fcf` §13.2–§13.5, both fixed up per an advisor-caught bug in the
-calibration selector before committing). **All V2 work is uncommitted** in the working tree (237 tests
-passing), waiting on an explicit go-ahead to commit. **`git push` is still unresolved** — every attempt since V0
-hangs on an interactive credential-manager prompt this session cannot answer (confirmed again with a
-15s-timeout push after the V1 commit: it timed out, same as every prior attempt). 5 commits are queued
-locally on `master`, ahead of `origin/master`. The user needs to run `git push` themselves from an
-interactive terminal to clear the credential prompt.
+Repo: https://github.com/Sahil-Khalsa/Embargo. V0, V1 and V2 are all complete, committed and pushed
+(`8b53fa3` V0, `048cfd2` §13.1, `bff4fcf` §13.2–§13.5, `6db77ad` V2). The only spec item not met is a live
+model backend (V2 criterion 2, below), by explicit decision. The push credential problem that blocked
+every earlier attempt cleared on its own by the time of the V2 push (a 20s-timeout `git push` succeeded).
 
 V2 build order follows spec §10/§14 (within a tier, build in the order the sections are written):
 §14.1 Packaging → §14.2 Pluggable model backend → §14.3 Reviewer UI → §14.4 Batch/service mode.
@@ -481,19 +477,29 @@ defect. V1 is fully complete and committed.
 4. **Batch and single-message screening produce byte-identical traces — MET** (see §14.4; also holds for
    the HTTP endpoint).
 
-**V2 full suite: 237 tests, all passing.**
+**V2 full suite: 245 tests, all passing** (237 at the V2 commit, +8 for queue status).
 
 ### Known gaps and follow-ups (not blocking, stated so they aren't lost)
 - Criterion 2's live backend (above).
 - `hosted`/`self_hosted` report `model_version = "unconfigured"`; a real backend should report the model id.
-- The reviewer UI has no authentication and binds to `127.0.0.1` by default. It's a local tool per spec
-  ("a local web UI"); exposing it beyond localhost needs auth first. Same for `embargo serve`.
-- Reviewer actions don't yet change a finding's place in the queue (a dismissed finding still lists).
-  Spec asks only that actions be recorded to the chain, so this is deliberate scope, not an oversight.
+- The reviewer UI and `embargo serve` have no authentication and bind to `127.0.0.1` by default. The spec
+  calls the UI "a local web UI" and defines no credential model, so none was invented; exposing either
+  beyond localhost is a deployment prerequisite that needs auth first.
 - Migrations cover the one real schema change so far (`valid_from`); there is no general version table.
   The next schema change should add one rather than another ad-hoc column check.
-- **Git push is still blocked** on the interactive credential prompt; V0, V1 and now V2 work is queued
-  locally. V2 is uncommitted pending the user's go-ahead.
+- `write_trace` reads the last line and appends without a cross-process lock, so two writers appending to
+  the same trace file at the same instant could both chain to the same predecessor (which `trace verify`
+  would report as a break). Not in the spec; a single `embargo serve` process handles requests serially.
+  Worth a lock if several processes ever share one trace file.
+- The installed package exposes a top-level `eval` package (spec §5's layout puts `eval/` at the repo
+  root, and `embargo eval` imports it). A future rename to `embargo.evaluation` would avoid that name in
+  site-packages, at the cost of departing from the spec's layout.
+- Not published to PyPI (needs the owner's PyPI account); the README says `pip install .` from a clone.
+  The wheel does not bundle `corpus/` or `eval/fixtures/`, so `embargo eval` runs from a clone.
+- **Resolved after V2 landed:** reviewer actions now drive queue status. A confirmed or dismissed finding
+  leaves the default queue (`/?all=1` shows it), escalated stays open, and the scope is the *trace*, not the
+  message — a re-screen writes a new trace_id and that finding returns as open. Tested including the
+  dismiss → re-screen → reappears case.
 
 ## Open questions (spec §12)
 Unresolved, flag to the user if implementation forces a choice — do not decide unilaterally:
@@ -613,3 +619,12 @@ Unresolved, flag to the user if implementation forces a choice — do not decide
   results, fact timeline, model provenance, real trace viewer; 7 tests red first), `embargo serve`, and
   the docs (README, CLAUDE.md, this file). Verified V2 end to end in a clean non-editable venv against real
   `review`/`serve` processes. **237 tests passing.** Criterion 2 remains partial by user decision.
+- 2026-09-20 — "Complete everything except the API and model." Scoped against the spec and STATUS follow-ups
+  rather than by inventing features: fixed the README install line (`embargo-screen` is not on PyPI, so
+  `pip install .`), corrected the stale push/uncommitted claims in this file, and made reviewer actions drive
+  queue status (8 tests red first, including the dismiss → re-screen → reappears case that decides whether a
+  dismissal is scoped to a trace or a message; trace-scoped, since a re-screen recomputes the verdict).
+  Re-verified against a real `embargo review` process. **245 tests passing.** Deliberately *not* built, and
+  recorded under Known gaps instead: reviewer-UI authentication (spec defines no credential model), a
+  general migrations version table (one schema change so far), cross-process trace locking, PyPI publishing
+  (needs the owner's account), and a live backend / model id (the excluded API-and-model work).

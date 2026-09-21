@@ -12,13 +12,40 @@ from embargo.rescreen import current_traces
 from embargo.trace import build_reviewer_action, read_traces, write_trace
 
 
-def build_queue(trace_path: str | Path) -> list[dict]:
+_STATUS_BY_ACTION = {"confirm": "confirmed", "dismiss": "dismissed", "escalate": "escalated"}
+_RESOLVED = {"confirmed", "dismissed"}
+
+
+def _review_status(records: list[dict], trace_id: str) -> str:
+    """The disposition of one screening trace: its latest reviewer action
+    (file order is chronological -- the trace is append-only), or "open".
+
+    Scoped to the trace_id, deliberately not the message: a re-screen writes
+    a superseding trace with a new trace_id because the verdict was
+    recomputed against current ledger state, and that new finding needs
+    review even if an earlier verdict on the same message was dismissed.
+    """
+    status = "open"
+    for record in records:
+        if record.get("record_type") == "reviewer_action" and record["trace_id_referenced"] == trace_id:
+            status = _STATUS_BY_ACTION[record["action"]]
+    return status
+
+
+def build_queue(trace_path: str | Path, *, include_resolved: bool = True) -> list[dict]:
     """Current (non-superseded) screening records with a non-clean verdict,
-    most severe first. Python's sort is stable, so sorting by trace_id
-    first and then by verdict gives a deterministic tie-break without a
-    combined sort key."""
+    most severe first, each annotated with `review_status` (open /
+    escalated / confirmed / dismissed). With include_resolved=False,
+    confirmed and dismissed findings are left out -- escalated ones are
+    not, since escalating hands a finding on rather than closing it.
+    Python's sort is stable, so sorting by trace_id first and then by
+    verdict gives a deterministic tie-break without a combined sort key."""
     records = read_traces(trace_path)
-    findings = [r for r in current_traces(records) if r["verdict"] != Verdict.CLEAN.value]
+    findings = [dict(r) for r in current_traces(records) if r["verdict"] != Verdict.CLEAN.value]
+    for finding in findings:
+        finding["review_status"] = _review_status(records, finding["trace_id"])
+    if not include_resolved:
+        findings = [f for f in findings if f["review_status"] not in _RESOLVED]
     findings.sort(key=lambda r: r["trace_id"])
     findings.sort(key=lambda r: Verdict(r["verdict"]), reverse=True)
     return findings

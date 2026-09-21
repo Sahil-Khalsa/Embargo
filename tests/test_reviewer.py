@@ -80,6 +80,84 @@ def test_build_queue_orders_disclosure_below_upstream_leak(tmp_path, capsys):
     assert queue_b[0]["verdict"] == "violation_disclosure"
 
 
+def _trace_id(trace_path):
+    return read_traces(trace_path, message_id="M001")[0]["trace_id"]
+
+
+def test_queue_marks_findings_open_until_a_reviewer_acts(tmp_path, capsys):
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    capsys.readouterr()
+
+    queue = build_queue(trace_path)
+
+    assert queue[0]["review_status"] == "open"
+
+
+def test_dismissed_finding_leaves_the_default_queue_but_is_still_listed_with_status(tmp_path, capsys):
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    capsys.readouterr()
+    record_reviewer_action(trace_path, _trace_id(trace_path), "dismiss", reviewer="carol",
+                           at=datetime(2026, 6, 2), reason="false positive")
+
+    assert build_queue(trace_path, include_resolved=False) == []
+    everything = build_queue(trace_path)
+    assert [f["review_status"] for f in everything] == ["dismissed"]
+
+
+def test_confirmed_finding_is_resolved_too(tmp_path, capsys):
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    capsys.readouterr()
+    record_reviewer_action(trace_path, _trace_id(trace_path), "confirm", reviewer="carol",
+                           at=datetime(2026, 6, 2))
+
+    assert build_queue(trace_path, include_resolved=False) == []
+    assert build_queue(trace_path)[0]["review_status"] == "confirmed"
+
+
+def test_escalated_finding_stays_in_the_queue_flagged(tmp_path, capsys):
+    """Escalating hands a finding to someone else -- it is not resolved."""
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    capsys.readouterr()
+    record_reviewer_action(trace_path, _trace_id(trace_path), "escalate", reviewer="carol",
+                           at=datetime(2026, 6, 2))
+
+    queue = build_queue(trace_path, include_resolved=False)
+
+    assert [f["review_status"] for f in queue] == ["escalated"]
+
+
+def test_latest_action_wins_when_a_reviewer_changes_their_mind(tmp_path, capsys):
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    capsys.readouterr()
+    tid = _trace_id(trace_path)
+    record_reviewer_action(trace_path, tid, "dismiss", reviewer="carol", at=datetime(2026, 6, 2))
+    record_reviewer_action(trace_path, tid, "escalate", reviewer="dave", at=datetime(2026, 6, 3))
+
+    assert build_queue(trace_path)[0]["review_status"] == "escalated"
+
+
+def test_dismissal_is_scoped_to_the_trace_not_the_message(tmp_path, capsys):
+    """The discriminating case: a dismissal must not swallow a later
+    re-screen. Re-screening writes a superseding trace with a new trace_id,
+    because the verdict was recomputed against current ledger state -- that
+    new finding genuinely needs review, even though the message is the same."""
+    db, trace_path = _setup(tmp_path, sender_crossed=False)
+    fixtures_path = tmp_path / "fixtures.json"
+    capsys.readouterr()
+    record_reviewer_action(trace_path, _trace_id(trace_path), "dismiss", reviewer="carol",
+                           at=datetime(2026, 6, 2))
+    assert build_queue(trace_path, include_resolved=False) == []
+
+    main(["rescreen", "--since", "999", "--db", db, "--trace-file", str(trace_path),
+          "--fixtures", str(fixtures_path)])
+    capsys.readouterr()
+
+    queue = build_queue(trace_path, include_resolved=False)
+    assert len(queue) == 1
+    assert queue[0]["review_status"] == "open"
+    assert queue[0]["supersedes"] is not None  # the re-screened trace, not the dismissed one
+
+
 def test_get_finding_returns_the_matching_screening_record(tmp_path, capsys):
     db, trace_path = _setup(tmp_path, sender_crossed=False)
     capsys.readouterr()

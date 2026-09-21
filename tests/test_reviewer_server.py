@@ -165,6 +165,35 @@ def test_trace_viewer_lists_every_record_read_only(running_server):
     assert "<form" not in body  # read-only: no way to act from the viewer
 
 
+def _dismiss(base_url, trace_id):
+    data = "reviewer=carol&action=dismiss&reason=routine".encode()
+    urllib.request.urlopen(
+        urllib.request.Request(f"{base_url}/finding/{trace_id}/action", data=data, method="POST")
+    ).read()
+
+
+def test_dismissed_finding_disappears_from_the_default_queue_but_not_from_show_all(running_server):
+    base_url, trace_path, trace_id = running_server
+    assert trace_id[:12] in _get(f"{base_url}/")
+
+    _dismiss(base_url, trace_id)
+
+    default_view = _get(f"{base_url}/")
+    assert trace_id[:12] not in default_view
+    assert "show resolved" in default_view  # the way back to it
+
+    all_view = _get(f"{base_url}/?all=1")
+    assert trace_id[:12] in all_view
+    assert "dismissed" in all_view
+
+
+def test_queue_shows_a_status_column(running_server):
+    base_url, trace_path, trace_id = running_server
+
+    assert "<th>status</th>" in _get(f"{base_url}/")
+    assert "open" in _get(f"{base_url}/")
+
+
 def test_finding_page_unknown_trace_id_is_404(running_server):
     base_url, trace_path, trace_id = running_server
 
