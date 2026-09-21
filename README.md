@@ -14,9 +14,11 @@
 
 **Embargo** screens messages for material non-public information (MNPI). It never asks a model *"is this a violation?"*. It asks only *"which known facts does this message convey?"*, and a deterministic decision layer computes the verdict from the fact's state, its timeline, and who had been wall-crossed onto it **at the moment the message was sent**. Every verdict leaves a tamper-evident trace that a reviewer can reconstruct without reading any code.
 
+The model's role is deliberately narrow, and the backend behind it is built to be pluggable: a hosted API, a self-hosted model that keeps ledger contents on your own infrastructure, or a fixture resolver for deterministic offline evaluation. See [The AI Layer](#the-ai-layer) for what runs today and what is still to be wired.
+
 > MNPI is not a property of message text. It is a property of a *fact*, and of *when it was said to whom*.
 
-[The Idea](#what-makes-this-different) · [See It Work](#see-it-work) · [Architecture](#system-architecture) · [Features](#features) · [Verified Findings](#verified-findings) · [Quick Start](#quick-start) · [Design Decisions](#key-engineering-decisions)
+[The Idea](#what-makes-this-different) · [See It Work](#see-it-work) · [Architecture](#system-architecture) · [The AI Layer](#the-ai-layer) · [Features](#features) · [Verified Findings](#verified-findings) · [Quick Start](#quick-start) · [Design Decisions](#key-engineering-decisions) · [Roadmap](#roadmap)
 
 </div>
 
@@ -183,6 +185,60 @@ Re-screens and reviewer actions **append**. Nothing is ever rewritten.
 
 ---
 
+## The AI Layer
+
+Embargo uses a language model for exactly one job, and it is built so that job cannot grow: **read a message and say which known facts it conveys.** Everything downstream of that answer is deterministic code.
+
+### What the model sees, and what it never sees
+
+| The model sees | The model never sees |
+|---|---|
+| The message body | Who sent it, who received it, or when |
+| For each candidate fact: its id, summary, entities, and aliases | A fact's state, `announced_at`, or `cleared_at` |
+| | Materiality, wall-crossings, or the rest of the ledger |
+| | Any question about materiality, seriousness, or whether something is a violation |
+
+It returns one thing per fact: `fact_id`, `conveys` or `mentions`, a `confidence` between 0 and 1, and the exact `span` of the message that triggered the resolution. It cannot return a verdict, and it cannot be wrong about the ledger, because it never sees it.
+
+### The contract is enforced, not hoped for
+
+Every resolution is validated before it can influence anything:
+
+- Its `span` must appear **verbatim** in the message body. Otherwise it is rejected and logged.
+- Its `fact_id` must be one of the candidates the resolver was actually shown. A resolver cannot invent a fact.
+- Malformed JSON gets one retry. After a second failure the message routes to `review` with the reason `resolver_output_invalid`. It is never guessed at and never silently passed.
+- Below the confidence threshold, a `conveys` resolution routes to `review` instead of proceeding.
+
+### Backends
+
+The resolver is a one-method `Protocol` whose shape is frozen, so a backend can be swapped without touching the pipeline. Backend choice is **config, not code**, and every trace records which backend and model version produced each resolution.
+
+| Backend | What it is | Status |
+|---|---|---|
+| `fake` | Resolves from a fixture file keyed by message id. Deterministic, no network. Powers the whole test suite and both evaluation corpora | **Available** |
+| `ModelResolver` | Wraps any prompt-in / JSON-out callable behind the contract above, with the retry and validation rules | **Available** |
+| `hosted` | A hosted model API for deployments that can use one | **Designed.** Selectable by config. The live model call is not yet wired, so selecting it fails with a clear error instead of silently falling back to fixtures |
+| `self_hosted` | A model running on your own infrastructure or machine, so candidate facts never leave it | **Designed.** Same status as `hosted` |
+
+### Why a self-hosted path matters
+
+The ledger is the most sensitive dataset a firm holds. Sending candidate facts to a third-party model provider makes hosting and data residency first-order deployment questions, and for some compliance teams a hard blocker. A self-hosted backend behind the same interface is what keeps that conversation open, and it is why backend selection is configuration rather than code.
+
+### Evaluating a real model
+
+The evaluation harness is model-agnostic. When a live backend is selected, the same commands report what the model actually does:
+
+```bash
+embargo eval                 # resolver precision/recall, conveys/mentions confusion,
+                             # prefilter recall, end-to-end verdict accuracy
+embargo eval --adversarial   # the deliberately hard corpus, reported separately
+embargo calibrate            # threshold sweep against the model's real confidence values
+```
+
+> **Note:** every figure in this README today comes from the fixture resolver. Those numbers exercise the deterministic layers and the harness, and are not measurements of any model.
+
+---
+
 ## Features
 
 ### Fact Ledger and Access Graph
@@ -221,8 +277,8 @@ A dismissal applies to that one trace, not the message. If a re-screen recompute
 ### Config and In-Place Migrations
 An optional TOML config (`--config`) with a strict precedence: explicit CLI flag > config file > built-in default. Databases created by an earlier version upgrade in place when opened. A missing column is added and backfilled rather than requiring a rebuild.
 
-### Bring Your Own Resolver
-The resolver is a one-method `Protocol` whose shape is frozen. `ModelResolver` wraps any prompt-in / JSON-out callable, retries once on malformed output, and then routes the message to `review` rather than guessing. Every resolution is validated: its span must appear verbatim in the message, and its fact must be one of the candidates the resolver was shown. Every trace records the backend and model version that produced its resolutions.
+### Pluggable Model Backends
+The resolver is a one-method `Protocol` whose shape is frozen, and backend choice is configuration rather than code. `ModelResolver` wraps any prompt-in / JSON-out callable, retries once on malformed output, and then routes the message to `review` rather than guessing. Every resolution is validated: its span must appear verbatim in the message, and its fact must be one of the candidates the resolver was shown. Every trace records the backend and model version that produced its resolutions. See [The AI Layer](#the-ai-layer) for the backend line-up and what is available today.
 
 ---
 
@@ -256,6 +312,7 @@ Each of these is asserted by a test in the suite, not just described.
 | Config | TOML via stdlib `tomllib` |
 | Corpus and fixtures | YAML and JSON (`PyYAML` is the only runtime dependency) |
 | Prefilter similarity | stdlib bag-of-words cosine |
+| Model step | A frozen one-method `Protocol`. Fixture resolver and any prompt-in / JSON-out callable available today. Hosted-API and self-hosted backends designed, live call not yet wired |
 | Tests | pytest, all against a fixture resolver with no network access |
 
 ---
@@ -278,7 +335,7 @@ Embargo/
 │   ├── reviewer.py             # queue, statuses, evidence chain, recording actions
 │   ├── reviewer_server.py      # the reviewer web UI
 │   ├── screen_server.py        # the HTTP screening endpoint
-│   ├── backends.py             # config-driven resolver selection
+│   ├── backends.py             # config-driven resolver selection: fake, hosted, self_hosted
 │   ├── config.py               # TOML config, DEFAULT_THRESHOLD (the one source)
 │   ├── migrations.py           # in-place schema upgrades
 │   └── cli.py                  # every `embargo` subcommand
@@ -377,7 +434,7 @@ Pass `--config <file.toml>` *before* the subcommand. Explicit CLI flags override
 
 ```toml
 threshold = 0.6        # the gate's confidence threshold
-backend   = "fake"     # resolver backend (`fake` resolves from fixtures)
+backend   = "fake"     # fake | hosted | self_hosted   (only `fake` is wired to a working call today)
 db_path   = "embargo.db"
 ```
 
@@ -465,6 +522,18 @@ Backend and model version are duck-typed extras read with `getattr`, never Proto
 |---|---|---|
 | `screening` | `screen`, `rescreen`, the endpoint | Candidates, every resolution, every check, verdict, `ledger_version`, `supersedes` |
 | `reviewer_action` | The reviewer UI | `confirm` / `dismiss` / `escalate`, the reviewer, a reason, the `trace_id` it refers to |
+
+---
+
+## Roadmap
+
+The deterministic layers, the audit trail, the reviewer tooling, and the evaluation harness are built and tested. What remains is connecting a live model to the one step designed for it.
+
+- [ ] **Live hosted-API backend.** Wire a real model call behind `backend = "hosted"`
+- [ ] **Live self-hosted backend.** Wire a locally or privately hosted model behind `backend = "self_hosted"`, so candidate facts never leave your infrastructure
+- [ ] **Real-model evaluation.** Run the main and adversarial corpora against a live model and report resolver precision, recall, conveys/mentions confusion, and prefilter recall from real output
+- [ ] **Calibrate against real confidence.** Run `embargo calibrate` on a live model's confidence values to choose the gate threshold from evidence
+- [ ] **Record the real model identifier.** Have live backends report the actual model id in each trace's `model_version`
 
 ---
 
